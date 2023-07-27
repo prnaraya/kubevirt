@@ -35,13 +35,13 @@ var (
 // NewMMTTCommand generates a new "convert-machine-types" command
 func NewMMTTCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "convert-machine-types",
+		Use:   "convert-machine-type",
 		Short: "Perform a mass machine type transition on any VMs that have an outdated machine type.",
 		Long: `Create a Job that iterates through VMs, updating the machine type of any VMs that have an outdated machine type. If a VM is running, it will also label the VM with 'restart-vm-required=true', indicating the user will need to perform manually by default. If --force-restart is set to true, the VM will be automatically restarted and the label will be removed. The Job will terminate once all VMs have their machine types updated, and all 'restart-vm-required' labels have been cleared.
 If no namespace is specified via --namespace, the mass machine type transition will be applied across all namespaces.
 Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated.`,
 		Example: usage(),
-		Args:    templates.ExactArgs("convert-machine-types", 0),
+		Args:    templates.ExactArgs("convert-machine-type", 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := Command{command: COMMAND_CONVERT_MACHINE_TYPE, clientConfig: clientConfig}
 			return c.RunE(args)
@@ -59,16 +59,16 @@ Note that should the Job fail, it will be restarted. Additonally, once the Job i
 
 func usage() string {
 	usage := `  # Update the machine types of all VMs with an outdated machine type across all namespaces without automatically restarting running VMs:
-  {{ProgramName}} convert-machine-types
+  {{ProgramName}} convert-machine-type
 
   # Update the machine types of all VMs with an outdated machine type in the namespace 'default':
-  {{ProgramName}} convert-machine-types --namespace=default
+  {{ProgramName}} convert-machine-type --namespace=default
 
   # Update the machine types of all VMs with an outdated machine type and automatically restart them if they are running:
-  {{ProgramName}} convert-machine-types --force-restart=true
+  {{ProgramName}} convert-machine-type --force-restart=true
   
   # Update the machine types of all VMs with the label 'kubevirt.io/memory=large':
-  {{ProgramName}} convert-machine-types --label-selector=kubevirt.io/memory=large`
+  {{ProgramName}} convert-machine-type --label-selector=kubevirt.io/memory=large`
 	return usage
 }
 
