@@ -12,7 +12,7 @@ import (
 	k6tv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	mmtt "kubevirt.io/kubevirt/pkg/virtctl/massmachinetypetransition"
+	. "kubevirt.io/kubevirt/pkg/virtctl/convertmachinetype/massmachinetypetransition"
 )
 
 var _ = Describe("Informers", func() {
@@ -31,7 +31,7 @@ var _ = Describe("Informers", func() {
 				delete(testVM.Labels, "restart-vm-required")
 			}).AnyTimes()
 
-			err := mmtt.RemoveWarningLabel(virtClient, testVM)
+			err := RemoveWarningLabel(virtClient, testVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(testVM.Labels).ToNot(HaveKeyWithValue("restart-vm-required", "true"))
 		})

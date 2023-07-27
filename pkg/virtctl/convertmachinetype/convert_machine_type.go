@@ -100,7 +100,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 		},
 
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "convert-machine-type",
+			Name:      "convert-machine-type",
 			Namespace: metav1.NamespaceDefault,
 		},
 
@@ -109,8 +109,8 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
-							Name: "convert-machine-type-image",
-							Image: ":mmtt_image"
+							Name:  "convert-machine-type-image",
+							Image: "mmtt-image",
 							Env: []v1.EnvVar{
 								{
 									Name:  "NAMESPACE",

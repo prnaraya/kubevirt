@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-func main() {
+func Run() {
 	var err error
 	// update restartNow if env is set
 	restartEnv, exists := os.LookupEnv("FORCE_RESTART")

@@ -15,7 +15,7 @@ import (
 	k6tv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	mmtt "kubevirt.io/kubevirt/pkg/virtctl/massmachinetypetransition"
+	. "kubevirt.io/kubevirt/pkg/virtctl/convertmachinetype/massmachinetypetransition"
 )
 
 var _ = Describe("Update Machine Type", func() {
@@ -43,26 +43,26 @@ var _ = Describe("Update Machine Type", func() {
 				vm.Labels["restart-vm-required"] = "true"
 			}).AnyTimes()
 
-			err := mmtt.AddWarningLabel(virtClient, vm)
+			err := AddWarningLabel(virtClient, vm)
 			Expect(err).ToNot(HaveOccurred())
 			vmKey, err := cache.MetaNamespaceKeyFunc(vm)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(mmtt.VmisPendingUpdate).To(HaveKey(vmKey))
+			Expect(VmisPendingUpdate).To(HaveKey(vmKey))
 
 			Expect(vm.Labels).To(HaveKeyWithValue("restart-vm-required", "true"), "VM should have 'restart-vm-required' label")
 
-			delete(mmtt.VmisPendingUpdate, vmKey)
+			delete(VmisPendingUpdate, vmKey)
 		})
 	})
 
 	Describe("verifyMachineType", func() {
 
 		DescribeTable("when machine type is", func(machineType string) {
-			needsUpdate, updatedMachineType := mmtt.VerifyMachineType(machineType)
+			needsUpdate, updatedMachineType := VerifyMachineType(machineType)
 			parsedMachineType := parseMachineType(machineType)
-			updateMachineTypeVersion := fmt.Sprintf("pc-q35-%s", mmtt.LatestMachineTypeVersion)
+			updateMachineTypeVersion := fmt.Sprintf("pc-q35-%s", LatestMachineTypeVersion)
 
-			if parsedMachineType >= mmtt.MinimumSupportedMachineTypeVersion {
+			if parsedMachineType >= MinimumSupportedMachineTypeVersion {
 				Expect(updatedMachineType).To(Equal(machineType))
 				Expect(needsUpdate).To(BeFalse())
 			} else if machineType == "q35" {
