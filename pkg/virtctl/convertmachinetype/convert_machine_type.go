@@ -3,6 +3,7 @@ package convertmachinetype
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/pointer"
 
 	"kubevirt.io/client-go/kubecli"
 
@@ -109,8 +111,8 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
-							Name: "convert-machine-type-image",
-							//Image:
+							Name:  "convert-machine-type-image",
+							Image: "registry:5000/kubevirt/mass-machine-type-transition:devel",
 							Env: []v1.EnvVar{
 								{
 									Name:  "NAMESPACE",
@@ -124,10 +126,27 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 									Name:  "LABEL_SELECTOR",
 									Value: labelSelectorFlag,
 								},
+								{
+									Name:  "KUBECONFIG",
+									Value: os.Getenv("KUBECONFIG"),
+								},
+							},
+							SecurityContext: &v1.SecurityContext{
+								AllowPrivilegeEscalation: pointer.Bool(false),
+								Capabilities: &v1.Capabilities{
+									Drop: []v1.Capability{"ALL"},
+								},
+								SeccompProfile: &v1.SeccompProfile{
+									Type: v1.SeccompProfileTypeRuntimeDefault,
+								},
 							},
 						},
 					},
-					RestartPolicy: v1.RestartPolicyOnFailure,
+					SecurityContext: &v1.PodSecurityContext{
+						RunAsNonRoot: pointer.Bool(true),
+					},
+					ServiceAccountName: "convert-machine-type",
+					RestartPolicy:      v1.RestartPolicyOnFailure,
 				},
 			},
 		},
