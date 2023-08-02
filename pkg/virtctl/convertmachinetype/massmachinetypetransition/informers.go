@@ -107,7 +107,7 @@ func handleDeletedVmi(obj interface{}) {
 }
 
 func RemoveWarningLabel(virtCli kubecli.KubevirtClient, vm *k6tv1.VirtualMachine) error {
-	removeLabel := fmt.Sprint(`{"op": "remove", "path": "/metadata/labels/restart-vm-required"}`)
+	removeLabel := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
 	_, err := virtCli.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(removeLabel), &k8sv1.PatchOptions{})
 	return err
 }

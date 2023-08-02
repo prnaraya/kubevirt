@@ -3,6 +3,7 @@ package convertmachinetype
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/pointer"
 
 	"kubevirt.io/client-go/kubecli"
 
@@ -39,7 +41,7 @@ func NewMMTTCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 		Short: "Perform a mass machine type transition on any VMs that have an outdated machine type.",
 		Long: `Create a Job that iterates through VMs, updating the machine type of any VMs that have an outdated machine type. If a VM is running, it will also label the VM with 'restart-vm-required=true', indicating the user will need to perform manually by default. If --force-restart is set to true, the VM will be automatically restarted and the label will be removed. The Job will terminate once all VMs have their machine types updated, and all 'restart-vm-required' labels have been cleared.
 If no namespace is specified via --namespace, the mass machine type transition will be applied across all namespaces.
-Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated.`,
+Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated using 'kubectl'.`,
 		Example: usage(),
 		Args:    templates.ExactArgs("convert-machine-type", 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,12 +76,6 @@ func usage() string {
 
 // executing the "expose" command
 func (o *Command) RunE(args []string) error {
-	// get the namespace
-	configNamespace, _, err := o.clientConfig.Namespace()
-	if err != nil {
-		return err
-	}
-
 	// get the client
 	virtClient, err := kubecli.GetKubevirtClientFromClientConfig(o.clientConfig)
 	if err != nil {
@@ -88,8 +84,14 @@ func (o *Command) RunE(args []string) error {
 
 	job := generateMassMachineTypeTransitionJob()
 	batch := virtClient.BatchV1()
-	_, err = batch.Jobs(configNamespace).Create(context.Background(), job, metav1.CreateOptions{})
-	return err
+	_, err = batch.Jobs("kubevirt").Create(context.Background(), job, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error creating convert-machine-type job: %v", err)
+	}
+	fmt.Println(`Successfully created convert-machine-type job.
+	This job can be monitored using 'kubectl get job' or 'kubectl describe job convert-machine-type'.
+	Once terminated, this job can be deleted by using 'kubectl delete job convert-machine-type'.`)
+	return nil
 }
 
 func generateMassMachineTypeTransitionJob() *batchv1.Job {
@@ -101,7 +103,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "convert-machine-type",
-			Namespace: metav1.NamespaceDefault,
+			Namespace: "kubevirt",
 		},
 
 		Spec: batchv1.JobSpec{
@@ -109,8 +111,8 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
-							Name:  "convert-machine-type-image",
-							Image: "mmtt-image",
+							Name:  "mmtt-image",
+							Image: "registry:5000/kubevirt/mass-machine-type-transition:devel",
 							Env: []v1.EnvVar{
 								{
 									Name:  "NAMESPACE",
@@ -124,10 +126,27 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 									Name:  "LABEL_SELECTOR",
 									Value: labelSelectorFlag,
 								},
+								{
+									Name:  "KUBECONFIG",
+									Value: os.Getenv("KUBECONFIG"),
+								},
+							},
+							SecurityContext: &v1.SecurityContext{
+								AllowPrivilegeEscalation: pointer.Bool(false),
+								Capabilities: &v1.Capabilities{
+									Drop: []v1.Capability{"ALL"},
+								},
+								SeccompProfile: &v1.SeccompProfile{
+									Type: v1.SeccompProfileTypeRuntimeDefault,
+								},
 							},
 						},
 					},
-					RestartPolicy: v1.RestartPolicyOnFailure,
+					SecurityContext: &v1.PodSecurityContext{
+						RunAsNonRoot: pointer.Bool(true),
+					},
+					ServiceAccountName: "convert-machine-type",
+					RestartPolicy:      v1.RestartPolicyOnFailure,
 				},
 			},
 		},

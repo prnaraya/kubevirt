@@ -46,6 +46,12 @@ func Run() {
 		fmt.Println(err)
 	}
 
+	// in the case that there were no running VMs, VmisPendingUpdate will be empty
+	// and job should be terminated immediately.
+	if len(VmisPendingUpdate) == 0 {
+		os.Exit(0)
+	}
+
 	// wait for list of VMIs that need restart to be empty
 	<-exitJob
 

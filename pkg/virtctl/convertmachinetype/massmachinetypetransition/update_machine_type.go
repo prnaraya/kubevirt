@@ -71,9 +71,9 @@ func UpdateMachineTypes(virtCli kubecli.KubevirtClient) error {
 			continue
 		}
 
-		updateMachineType := fmt.Sprintf(`{"spec": {"template": {"spec": {"domain": {"machine": {"type": "%s"}}}}}}`, machineType)
+		updateMachineType := fmt.Sprintf(`{"spec":{"template":{"spec":{"domain":{"machine":{"type":"%s"}}}}}}`, machineType)
 
-		_, err := virtCli.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.StrategicMergePatchType, []byte(updateMachineType), &k8sv1.PatchOptions{})
+		_, err := virtCli.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(updateMachineType), &k8sv1.PatchOptions{})
 		if err != nil {
 			fmt.Print(err)
 			continue
@@ -113,9 +113,9 @@ func UpdateMachineTypes(virtCli kubecli.KubevirtClient) error {
 }
 
 func AddWarningLabel(virtCli kubecli.KubevirtClient, vm *k6tv1.VirtualMachine) error {
-	addLabel := fmt.Sprint(`{"metadata": { "labels": {"restart-vm-required": "true"}}}`)
+	addLabel := `{"metadata":{"labels":{"restart-vm-required":"true"}}}`
 
-	_, err := virtCli.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.StrategicMergePatchType, []byte(addLabel), &k8sv1.PatchOptions{})
+	_, err := virtCli.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(addLabel), &k8sv1.PatchOptions{})
 	if err != nil {
 		return err
 	}
