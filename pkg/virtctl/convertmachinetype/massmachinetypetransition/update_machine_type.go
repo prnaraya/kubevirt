@@ -91,7 +91,8 @@ func UpdateMachineTypes(virtCli kubecli.KubevirtClient) error {
 			}
 
 			// only need to restart VM if VMI machine type is outdated (in the case of "q35" machine types
-			if vmi.Status.Machine.Type >= MinimumSupportedMachineTypeVersion {
+			needsUpdate, _ := VerifyMachineType(vmi.Status.Machine.Type)
+			if !needsUpdate {
 				continue
 			}
 
@@ -131,4 +132,16 @@ func AddWarningLabel(virtCli kubecli.KubevirtClient, vm *k6tv1.VirtualMachine) e
 	VmisPendingUpdate[vmKey] = struct{}{}
 
 	return nil
+}
+
+func SetTestRestartNow(testRestart bool) {
+	restartNow = testRestart
+}
+
+func SetTestNamespace(testNamespace string) {
+	namespace = testNamespace
+}
+
+func SetTestLabelSelector(testLabelSelector string) {
+	labelSelector = testLabelSelector
 }
