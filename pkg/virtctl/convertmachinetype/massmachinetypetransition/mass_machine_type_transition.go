@@ -4,56 +4,64 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
+
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/client-go/tools/cache"
+	k6tv1 "kubevirt.io/api/core/v1"
 )
 
 func Run() {
+	// check env variables and set them accordingly
 	var err error
-	// update restartNow if env is set
 	restartEnv, exists := os.LookupEnv("FORCE_RESTART")
 	if exists {
 		restartNow, err = strconv.ParseBool(restartEnv)
 		if err != nil {
 			fmt.Println(err)
+			os.Exit(1)
 		}
 	}
 
-	// update namespace if env is set
 	namespaceEnv, exists := os.LookupEnv("NAMESPACE")
 	if exists && namespaceEnv != "" {
 		namespace = namespaceEnv
 	}
 
-	// update label selector if env is set
 	selectorEnv, exists := os.LookupEnv("LABEL_SELECTOR")
 	if exists {
 		labelSelector = selectorEnv
 	}
 
+	// set up JobController
 	virtCli, err := getVirtCli()
 	if err != nil {
 		os.Exit(1)
 	}
 
-	vmiInformer, err := getVmiInformer(virtCli)
+	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", namespace, fields.Everything())
+	vmiInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
+
+	exitJob := make(chan struct{})
+
+	controller, err := NewJobController(vmiInformer, virtCli, exitJob)
 	if err != nil {
 		os.Exit(1)
 	}
 
-	go vmiInformer.Run(exitJob)
+	go controller.VmiInformer.Run(controller.ExitJob)
 
-	err = UpdateMachineTypes(virtCli)
+	err = controller.UpdateMachineTypes()
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	// in the case that there were no running VMs, VmisPendingUpdate will be empty
-	// and job should be terminated immediately.
-	if len(VmisPendingUpdate) == 0 {
-		os.Exit(0)
+	numVmisPendingUpdate := controller.numVmisPendingUpdate()
+	if numVmisPendingUpdate == 0 {
+		close(controller.ExitJob)
 	}
 
-	// wait for list of VMIs that need restart to be empty
-	<-exitJob
+	<-controller.ExitJob
 
 	os.Exit(0)
 }

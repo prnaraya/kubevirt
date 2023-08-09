@@ -71,13 +71,7 @@ func newConvertMachineTypeClusterRole() *rbacv1.ClusterRole {
 					GroupNameSubresources,
 				},
 				Resources: []string{
-					"virtualmachines/start",
-					"virtualmachines/stop",
 					"virtualmachines/restart",
-					"virtualmachines/addvolume",
-					"virtualmachines/removevolume",
-					"virtualmachines/migrate",
-					"virtualmachines/memorydump",
 				},
 				Verbs: []string{
 					"update",
@@ -101,12 +95,9 @@ func newConvertMachineTypeClusterRole() *rbacv1.ClusterRole {
 				Resources: []string{
 					"virtualmachines",
 					"virtualmachineinstances",
-					"virtualmachineinstancepresets",
-					"virtualmachineinstancereplicasets",
-					"virtualmachineinstancemigrations",
 				},
 				Verbs: []string{
-					"get", "delete", "create", "update", "patch", "list", "watch",
+					"get", "update", "patch", "list", "watch",
 				},
 			},
 			{
