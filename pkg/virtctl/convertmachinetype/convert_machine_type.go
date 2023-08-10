@@ -3,7 +3,6 @@ package convertmachinetype
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -19,12 +18,12 @@ import (
 )
 
 const (
-	COMMAND_CONVERT_MACHINE_TYPE = "convert-machine-type"
+	kubevirtNamespace  = "kubevirt"
+	convertMachineType = "convert-machine-type"
 )
 
-type Command struct {
+type ConvertMachineTypeCommand struct {
 	clientConfig clientcmd.ClientConfig
-	command      string
 }
 
 // holding flag information
@@ -37,16 +36,16 @@ var (
 // NewConvertMachineTypeCommand generates a new "convert-machine-types" command
 func NewConvertMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "convert-machine-type",
+		Use:   convertMachineType,
 		Short: "Perform a mass machine type transition on any VMs that have an outdated machine type.",
 		Long: `Create a Job that iterates through VMs, updating the machine type of any VMs that have an outdated machine type. If a VM is running, it will also label the VM with 'restart-vm-required=true', indicating the user will need to perform manually by default. If --force-restart is set to true, the VM will be automatically restarted and the label will be removed. The Job will terminate once all VMs have their machine types updated, and all 'restart-vm-required' labels have been cleared.
-If no namespace is specified via --namespace, the mass machine type transition will be applied across all namespaces.
-Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated using 'kubectl'.`,
+		If no namespace is specified via --namespace, the mass machine type transition will be applied across all namespaces.
+		Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated using 'kubectl'.`,
 		Example: usage(),
-		Args:    templates.ExactArgs("convert-machine-type", 0),
+		Args:    templates.ExactArgs(convertMachineType, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c := Command{command: COMMAND_CONVERT_MACHINE_TYPE, clientConfig: clientConfig}
-			return c.RunE(args)
+			c := ConvertMachineTypeCommand{clientConfig: clientConfig}
+			return c.Run()
 		},
 	}
 
@@ -75,7 +74,7 @@ func usage() string {
 }
 
 // executing the "expose" command
-func (o *Command) RunE(args []string) error {
+func (o *ConvertMachineTypeCommand) Run() error {
 	// get the client
 	virtClient, err := kubecli.GetKubevirtClientFromClientConfig(o.clientConfig)
 	if err != nil {
@@ -84,13 +83,13 @@ func (o *Command) RunE(args []string) error {
 
 	job := generateMassMachineTypeTransitionJob()
 	batch := virtClient.BatchV1()
-	_, err = batch.Jobs("kubevirt").Create(context.Background(), job, metav1.CreateOptions{})
+	_, err = batch.Jobs(kubevirtNamespace).Create(context.Background(), job, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error creating convert-machine-type job: %v", err)
 	}
 	fmt.Println(`Successfully created convert-machine-type job.
-	This job can be monitored using 'kubectl get job -n kubevirt' or 'kubectl describe job convert-machine-type -n kubevirt'.
-	Once terminated, this job can be deleted by using 'kubectl delete job convert-machine-type -n kubevirt'.`)
+	This job can be monitored using 'kubectl get job -n kubevirt' and 'kubectl describe job -n kubevirt [job name]'.
+	Once terminated, this job can be deleted by using 'kubectl delete job -n kubevirt [job name]'.`)
 	return nil
 }
 
@@ -102,8 +101,8 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 		},
 
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "convert-machine-type",
-			Namespace: "kubevirt",
+			GenerateName: "convert-machine-type-",
+			Namespace:    kubevirtNamespace,
 		},
 
 		Spec: batchv1.JobSpec{
@@ -111,7 +110,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
-							Name:  "convert-machine-type-image",
+							Name:  convertMachineType,
 							Image: "registry:5000/kubevirt/mass-machine-type-transition:devel",
 							Env: []v1.EnvVar{
 								{
@@ -125,10 +124,6 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 								{
 									Name:  "LABEL_SELECTOR",
 									Value: labelSelectorFlag,
-								},
-								{
-									Name:  "KUBECONFIG",
-									Value: os.Getenv("KUBECONFIG"),
 								},
 							},
 							SecurityContext: &v1.SecurityContext{
@@ -145,7 +140,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 					SecurityContext: &v1.PodSecurityContext{
 						RunAsNonRoot: pointer.Bool(true),
 					},
-					ServiceAccountName: "convert-machine-type",
+					ServiceAccountName: convertMachineType,
 					RestartPolicy:      v1.RestartPolicyOnFailure,
 				},
 			},
