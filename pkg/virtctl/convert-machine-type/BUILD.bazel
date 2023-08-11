@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     srcs = ["convert_machine_type.go"],
-    importpath = "kubevirt.io/kubevirt/pkg/virtctl/convertmachinetype",
+    importpath = "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/virtctl/templates:go_default_library",
