@@ -1,4 +1,4 @@
-package massmachinetypetransition
+package convertmachinetypejob
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func IsMachineTypeUpdated(machineType string) (isUpdated bool, updatedMachineTyp
 	machineTypeSubstrings := strings.Split(machineType, "-")
 
 	if len(machineTypeSubstrings) != 3 {
-		return false, machineType, fmt.Errorf("invalid machine type format")
+		return false, machineType, fmt.Errorf("invalid machine type: %s", machineType)
 	}
 
 	if len(machineTypeSubstrings) == 3 {
@@ -133,7 +133,7 @@ func (c *JobController) UpdateMachineTypes() error {
 }
 
 func (c *JobController) AddWarningLabel(vm *k6tv1.VirtualMachine) error {
-	addLabel := `{"metadata":{"labels":{"restart-vm-required":"true"}}}`
+	addLabel := `{"metadata":{"labels":{"restart-vm-required":""}}}`
 
 	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(addLabel), &k8sv1.PatchOptions{})
 	return err

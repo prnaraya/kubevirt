@@ -3,11 +3,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = [
+        "convert_machine_type.go",
         "informers.go",
-        "mass_machine_type_transition.go",
         "update_machine_type.go",
     ],
-    importpath = "kubevirt.io/kubevirt/pkg/virtctl/convertmachinetype/massmachinetypetransition",
+    importpath = "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type/convert-machine-type-job",
     visibility = ["//visibility:public"],
     deps = [
         "//staging/src/kubevirt.io/api/core/v1:go_default_library",
@@ -22,12 +22,13 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
-        "informers_test.go",
-        "mass_machine_type_transition_suite_test.go",
+        "convert_machine_type_job_suite_test.go",
+        "convert_machine_type_test.go",
         "update_machine_type_test.go",
     ],
     deps = [
         ":go_default_library",
+        "//pkg/testutils:go_default_library",
         "//staging/src/kubevirt.io/api/core/v1:go_default_library",
         "//staging/src/kubevirt.io/client-go/kubecli:go_default_library",
         "//vendor/github.com/golang/mock/gomock:go_default_library",
@@ -39,6 +40,7 @@ go_test(
         "//vendor/k8s.io/client-go/kubernetes/fake:go_default_library",
         "//vendor/k8s.io/client-go/testing:go_default_library",
         "//vendor/k8s.io/client-go/tools/cache:go_default_library",
+        "//vendor/k8s.io/client-go/tools/cache/testing:go_default_library",
         "//vendor/k8s.io/utils/pointer:go_default_library",
     ],
 )

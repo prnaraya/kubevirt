@@ -28,9 +28,9 @@ type ConvertMachineTypeCommand struct {
 
 // holding flag information
 var (
-	namespaceFlag     string
+	NamespaceFlag     string
 	forceRestartFlag  bool
-	labelSelectorFlag string
+	LabelSelectorFlag string
 )
 
 // NewConvertMachineTypeCommand generates a new "convert-machine-types" command
@@ -50,9 +50,9 @@ func NewConvertMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Co
 	}
 
 	// flags for the "expose" command
-	cmd.Flags().StringVar(&namespaceFlag, "namespace", "", "Namespace in which the mass machine type transition will be applied. Leave empty to apply to all namespaces.")
+	cmd.Flags().StringVar(&NamespaceFlag, "namespace", "", "Namespace in which the mass machine type transition will be applied. Leave empty to apply to all namespaces.")
 	cmd.Flags().BoolVar(&forceRestartFlag, "force-restart", false, "When true, restarts all VMs that have their machine types updated. Otherwise, updated VMs must be restarted manually for the machine type change to take effect.")
-	cmd.Flags().StringVar(&labelSelectorFlag, "label-selector", "", "Selector (label query) on which to filter VMs to be updated.")
+	cmd.Flags().StringVar(&LabelSelectorFlag, "label-selector", "", "Selector (label query) on which to filter VMs to be updated.")
 	cmd.SetUsageTemplate(templates.UsageTemplate())
 
 	return cmd
@@ -115,7 +115,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 							Env: []v1.EnvVar{
 								{
 									Name:  "NAMESPACE",
-									Value: namespaceFlag,
+									Value: NamespaceFlag,
 								},
 								{
 									Name:  "FORCE_RESTART",
@@ -123,7 +123,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 								},
 								{
 									Name:  "LABEL_SELECTOR",
-									Value: labelSelectorFlag,
+									Value: LabelSelectorFlag,
 								},
 							},
 							SecurityContext: &v1.SecurityContext{
