@@ -1,9 +1,9 @@
 package main
 
 import (
-	mmtt "kubevirt.io/kubevirt/pkg/virtctl/convertmachinetype/massmachinetypetransition"
+	convertmachinetype "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type/convert-machine-type-job"
 )
 
 func main() {
-	mmtt.Run()
+	convertmachinetype.Run()
 }

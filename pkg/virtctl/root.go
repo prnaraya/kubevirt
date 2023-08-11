@@ -15,7 +15,7 @@ import (
 
 	"kubevirt.io/kubevirt/pkg/virtctl/configuration"
 	"kubevirt.io/kubevirt/pkg/virtctl/console"
-	"kubevirt.io/kubevirt/pkg/virtctl/convertmachinetype"
+	convertmachinetype "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type"
 	"kubevirt.io/kubevirt/pkg/virtctl/create"
 	"kubevirt.io/kubevirt/pkg/virtctl/credentials"
 	"kubevirt.io/kubevirt/pkg/virtctl/expose"

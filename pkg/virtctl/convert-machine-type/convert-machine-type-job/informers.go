@@ -1,4 +1,4 @@
-package massmachinetypetransition
+package convertmachinetypejob
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func NewJobController(
 	}
 
 	_, err := vmiInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		DeleteFunc: c.HandleDeletedVmi,
+		DeleteFunc: c.handleDeletedVmi,
 	})
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func getVirtCli() (kubecli.KubevirtClient, error) {
 	return virtCli, err
 }
 
-func (c *JobController) HandleDeletedVmi(obj interface{}) {
+func (c *JobController) handleDeletedVmi(obj interface{}) {
 	vmi, ok := obj.(*k6tv1.VirtualMachineInstance)
 	if !ok {
 		return
@@ -72,13 +72,18 @@ func (c *JobController) HandleDeletedVmi(obj interface{}) {
 	// check that VM machine type is not outdated in the case that a VM
 	// has been restarted for a different reason before its machine type
 	// has been updated
-	pendingUpdate, _ := IsMachineTypeUpdated(vmi.Status.Machine.Type)
+	pendingUpdate, _, err := IsMachineTypeUpdated(vmi.Status.Machine.Type)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+
 	if pendingUpdate {
 		return
 	}
 
 	// remove warning label from VM
-	err = c.RemoveWarningLabel(vm)
+	err = c.removeWarningLabel(vm)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -93,15 +98,15 @@ func (c *JobController) HandleDeletedVmi(obj interface{}) {
 	close(c.ExitJob)
 }
 
-func (c *JobController) RemoveWarningLabel(vm *k6tv1.VirtualMachine) error {
+func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 	removeLabel := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
-	_, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(removeLabel), &k8sv1.PatchOptions{})
+	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(removeLabel), &k8sv1.PatchOptions{})
 	return err
 }
 
 func (c *JobController) numVmisPendingUpdate() int {
 	vmList, err := c.VirtClient.VirtualMachine(namespace).List(context.Background(), &k8sv1.ListOptions{
-		LabelSelector: "restart-vm-required=true",
+		LabelSelector: `restart-vm-required=""`,
 	})
 	if err != nil {
 		fmt.Println(err)

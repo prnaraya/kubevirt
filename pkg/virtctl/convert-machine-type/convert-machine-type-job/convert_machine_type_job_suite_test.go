@@ -1,4 +1,4 @@
-package massmachinetypetransition_test
+package convertmachinetypejob_test
 
 import (
 	"testing"
