@@ -15,7 +15,6 @@ import (
 
 	"kubevirt.io/kubevirt/pkg/virtctl/configuration"
 	"kubevirt.io/kubevirt/pkg/virtctl/console"
-	convertmachinetype "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type"
 	"kubevirt.io/kubevirt/pkg/virtctl/create"
 	"kubevirt.io/kubevirt/pkg/virtctl/credentials"
 	"kubevirt.io/kubevirt/pkg/virtctl/expose"
@@ -28,6 +27,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/virtctl/softreboot"
 	"kubevirt.io/kubevirt/pkg/virtctl/ssh"
 	"kubevirt.io/kubevirt/pkg/virtctl/templates"
+	"kubevirt.io/kubevirt/pkg/virtctl/update"
 	"kubevirt.io/kubevirt/pkg/virtctl/usbredir"
 	"kubevirt.io/kubevirt/pkg/virtctl/version"
 	"kubevirt.io/kubevirt/pkg/virtctl/vm"
@@ -108,7 +108,7 @@ func NewVirtctlCommand() (*cobra.Command, clientcmd.ClientConfig) {
 		imageupload.NewImageUploadCommand(clientConfig),
 		guestfs.NewGuestfsShellCommand(clientConfig),
 		vmexport.NewVirtualMachineExportCommand(clientConfig),
-		convertmachinetype.NewConvertMachineTypeCommand(clientConfig),
+		update.NewCommand(clientConfig),
 		create.NewCommand(clientConfig),
 		credentials.NewCommand(clientConfig),
 		optionsCmd,

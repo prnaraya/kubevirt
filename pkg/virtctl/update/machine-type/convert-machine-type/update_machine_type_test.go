@@ -1,4 +1,4 @@
-package convertmachinetypejob_test
+package convertmachinetype_test
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	"kubevirt.io/kubevirt/pkg/testutils"
-	. "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type/convert-machine-type-job"
+	. "kubevirt.io/kubevirt/pkg/virtctl/update/machine-type/convert-machine-type"
 )
 
 const (

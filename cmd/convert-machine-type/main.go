@@ -1,7 +1,7 @@
 package main
 
 import (
-	convertmachinetype "kubevirt.io/kubevirt/pkg/virtctl/convert-machine-type/convert-machine-type-job"
+	convertmachinetype "kubevirt.io/kubevirt/pkg/virtctl/update/machine-type/convert-machine-type"
 )
 
 func main() {
