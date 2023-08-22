@@ -11,7 +11,6 @@ go_library(
     deps = [
         "//pkg/virtctl/configuration:go_default_library",
         "//pkg/virtctl/console:go_default_library",
-        "//pkg/virtctl/convert-machine-type:go_default_library",
         "//pkg/virtctl/create:go_default_library",
         "//pkg/virtctl/credentials:go_default_library",
         "//pkg/virtctl/expose:go_default_library",
@@ -24,6 +23,7 @@ go_library(
         "//pkg/virtctl/softreboot:go_default_library",
         "//pkg/virtctl/ssh:go_default_library",
         "//pkg/virtctl/templates:go_default_library",
+        "//pkg/virtctl/update:go_default_library",
         "//pkg/virtctl/usbredir:go_default_library",
         "//pkg/virtctl/version:go_default_library",
         "//pkg/virtctl/vm:go_default_library",

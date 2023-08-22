@@ -20,7 +20,8 @@ const (
 	latestMachineType      = "pc-q35-rhel9.2.0"
 	unsupportedMachineType = "pc-q35-rhel7.0.0"
 	supportedMachineType   = "pc-q35-rhel9.0.0"
-	convertMachineType     = "convert-machine-type"
+	update                 = "update"
+	machineTypes           = "machine-types"
 	restartRequiredLabel   = "restart-vm-required"
 	namespaceFlag          = "namespace"
 	labelSelectorFlag      = "label-selector"
@@ -56,7 +57,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", func() {
 			vmUnsupportedRunning := createVM(virtClient, unsupportedMachineType, util.NamespaceTestDefault, false, true)
 			vmSupported := createVM(virtClient, unsupportedMachineType, util.NamespaceTestDefault, false, false)
 
-			err := clientcmd.NewRepeatableVirtctlCommand(convertMachineType)()
+			err := clientcmd.NewRepeatableVirtctlCommand(update, machineTypes)()
 			Expect(err).ToNot(HaveOccurred())
 
 			job := expectJobExists()
@@ -76,7 +77,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", func() {
 			vmNamespaceOtherStopped := createVM(virtClient, unsupportedMachineType, metav1.NamespaceDefault, false, false)
 			vmNamespaceOtherRunning := createVM(virtClient, unsupportedMachineType, metav1.NamespaceDefault, false, true)
 
-			err := clientcmd.NewRepeatableVirtctlCommand(convertMachineType, setFlag(namespaceFlag, metav1.NamespaceDefault))()
+			err := clientcmd.NewRepeatableVirtctlCommand(update, machineTypes, setFlag(namespaceFlag, metav1.NamespaceDefault))()
 			Expect(err).ToNot(HaveOccurred())
 
 			job := expectJobExists()
@@ -98,7 +99,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", func() {
 			vmNoLabelStopped := createVM(virtClient, unsupportedMachineType, util.NamespaceTestDefault, false, false)
 			vmNoLabelRunning := createVM(virtClient, unsupportedMachineType, util.NamespaceTestDefault, false, true)
 
-			err := clientcmd.NewRepeatableVirtctlCommand(convertMachineType, setFlag(labelSelectorFlag, "testing-label=true"))()
+			err := clientcmd.NewRepeatableVirtctlCommand(update, machineTypes, setFlag(labelSelectorFlag, "testing-label=true"))()
 			Expect(err).ToNot(HaveOccurred())
 
 			job := expectJobExists()
@@ -150,7 +151,7 @@ func createVM(virtClient kubecli.KubevirtClient, machineType, namespace string, 
 
 func hasJob(jobs *batchv1.JobList) (*batchv1.Job, bool) {
 	for _, job := range jobs.Items {
-		if strings.Contains(job.Name, convertMachineType) {
+		if strings.Contains(job.Name, "convert-machine-type") {
 			return &job, true
 		}
 	}
