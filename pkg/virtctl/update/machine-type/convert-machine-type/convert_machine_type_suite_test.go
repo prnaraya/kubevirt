@@ -1,4 +1,4 @@
-package convertmachinetypejob_test
+package convertmachinetype_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestMassMachineTypeTransition(t *testing.T) {
+func TestConvertMachineType(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "MassMachineTypeTransition Suite")
 }

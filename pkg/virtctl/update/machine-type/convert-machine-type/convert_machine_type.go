@@ -1,4 +1,4 @@
-package convertmachinetypejob
+package convertmachinetype
 
 import (
 	"fmt"
@@ -57,7 +57,7 @@ func Run() {
 	}
 
 	numVmisPendingUpdate := controller.numVmisPendingUpdate()
-	if numVmisPendingUpdate == 0 {
+	if numVmisPendingUpdate <= 0 {
 		close(controller.ExitJob)
 	}
 
