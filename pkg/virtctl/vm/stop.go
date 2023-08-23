@@ -45,8 +45,8 @@ func NewStopCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&forceRestart, forceArg, false, "--force=false: Only used when grace-period=0. If true, immediately remove VMI pod from API and bypass graceful deletion. Note that immediate deletion of some resources may result in inconsistency or data loss and requires confirmation.")
-	cmd.Flags().Int64Var(&gracePeriod, gracePeriodArg, -1, "--grace-period=-1: Period of time in seconds given to the VMI to terminate gracefully. Can only be set to 0 when --force is true (force deletion). Currently only setting 0 is supported.")
+	cmd.Flags().BoolVar(&forceRestart, forceArg, false, "--force=false: If true, immediately remove VMI pod from API and bypass graceful deletion. Note that immediate deletion of some resources may result in inconsistency or data loss and requires confirmation.")
+	cmd.Flags().Int64Var(&gracePeriod, gracePeriodArg, -1, "--grace-period=-1: Period of time in seconds given to the VMI to terminate gracefully, after which a differnet type of graceful termination will be attempted. Currently only setting 0 is supported.")
 	cmd.Flags().BoolVar(&dryRun, dryRunArg, false, dryRunCommandUsage)
 	cmd.SetUsageTemplate(templates.UsageTemplate())
 	return cmd
@@ -66,24 +66,19 @@ func (o *Command) stopRun(args []string, cmd *cobra.Command) error {
 		fmt.Printf("Dry Run execution\n")
 	}
 
-	if cmd.Flags().Changed(gracePeriodArg) && forceRestart == false {
-		return fmt.Errorf("Can not set gracePeriod without --force=true")
+	if forceRestart {
+		err = virtClient.VirtualMachine(namespace).ForceStop(context.Background(), vmiName, &v1.StopOptions{DryRun: dryRunOption})
+
+	} else {
+		if cmd.Flags().Changed(gracePeriodArg) {
+			err = virtClient.VirtualMachine(namespace).Stop(context.Background(), vmiName, &v1.StopOptions{GracePeriod: &gracePeriod, DryRun: dryRunOption})
+		} else {
+			err = virtClient.VirtualMachine(namespace).Stop(context.Background(), vmiName, &v1.StopOptions{DryRun: dryRunOption})
+		}
 	}
 
-	if forceRestart {
-		if cmd.Flags().Changed(gracePeriodArg) {
-			err = virtClient.VirtualMachine(namespace).ForceStop(context.Background(), vmiName, &v1.StopOptions{GracePeriod: &gracePeriod, DryRun: dryRunOption})
-			if err != nil {
-				return fmt.Errorf("Error force stopping VirtualMachine, %v", err)
-			}
-		} else if !cmd.Flags().Changed(gracePeriodArg) {
-			return fmt.Errorf("Can not force stop without gracePeriod")
-		}
-	} else {
-		err = virtClient.VirtualMachine(namespace).Stop(context.Background(), vmiName, &v1.StopOptions{DryRun: dryRunOption})
-		if err != nil {
-			return fmt.Errorf("Error stopping VirtualMachine %v", err)
-		}
+	if err != nil {
+		return fmt.Errorf("error stopping VirtualMachine %v", err)
 	}
 
 	fmt.Printf("VM %s was scheduled to %s\n", vmiName, o.command)
