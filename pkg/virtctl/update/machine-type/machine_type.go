@@ -31,6 +31,7 @@ var (
 	namespaceFlag     string
 	forceRestartFlag  bool
 	labelSelectorFlag string
+	machineTypeFlag   string
 )
 
 // NewConvertMachineTypeCommand generates a new "convert-machine-types" command
@@ -50,6 +51,8 @@ func NewMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 	}
 
 	// flags for the "expose" command
+	cmd.Flags().StringVar(&machineTypeFlag, "which-matches-glob", "", "Machine type to be updated. This flag is required.")
+	cmd.MarkFlagRequired("which-matches-glob")
 	cmd.Flags().StringVar(&namespaceFlag, "namespace", "", "Namespace in which the mass machine type transition will be applied. Leave empty to apply to all namespaces.")
 	cmd.Flags().BoolVar(&forceRestartFlag, "force-restart", false, "When true, restarts all VMs that have their machine types updated. Otherwise, updated VMs must be restarted manually for the machine type change to take effect.")
 	cmd.Flags().StringVar(&labelSelectorFlag, "label-selector", "", "Selector (label query) on which to filter VMs to be updated.")
@@ -59,17 +62,17 @@ func NewMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 }
 
 func usage() string {
-	usage := `  # Update the machine types of all VMs with an outdated machine type across all namespaces without automatically restarting running VMs:
-  {{ProgramName}} update machine-types
+	usage := `  # Update the machine types of all VMs with the designated machine type across all namespaces without automatically restarting running VMs:
+  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.*
 
-  # Update the machine types of all VMs with an outdated machine type in the namespace 'default':
-  {{ProgramName}} update machine-types --namespace=default
+  # Update the machine types of all VMs with the designated machine type in the namespace 'default':
+  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.* --namespace=default
 
-  # Update the machine types of all VMs with an outdated machine type and automatically restart them if they are running:
-  {{ProgramName}} update machine-types --force-restart=true
+  # Update the machine types of all VMs with the designated machine type and automatically restart them if they are running:
+  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.* --force-restart=true
   
-  # Update the machine types of all VMs with the label 'kubevirt.io/memory=large':
-  {{ProgramName}} update machine-types --label-selector=kubevirt.io/memory=large`
+  # Update the machine types of all VMs with the designated machine type and with the label 'kubevirt.io/memory=large':
+  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.* --label-selector=kubevirt.io/memory=large`
 	return usage
 }
 
@@ -113,6 +116,10 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 							Name:  machineTypeCmd,
 							Image: "registry:5000/kubevirt/mass-machine-type-transition:devel",
 							Env: []v1.EnvVar{
+								{
+									Name:  "MACHINE_TYPE",
+									Value: machineTypeFlag,
+								},
 								{
 									Name:  "NAMESPACE",
 									Value: namespaceFlag,
