@@ -3,7 +3,6 @@ package convertmachinetype_test
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -24,8 +23,9 @@ import (
 )
 
 const (
-	unsupportedMachineType = "pc-q35-rhel8.2.0"
-	aliasMachineType       = "q35"
+	machineTypeGlob        = "*rhel8.*"
+	machineTypeNeedsUpdate = "pc-q35-rhel8.0.0"
+	machineTypeNoUpdate    = "pc-q35-rhel9.0.0"
 	restartRequiredLabel   = "restart-vm-required"
 )
 
@@ -89,7 +89,7 @@ var _ = Describe("Update Machine Type", func() {
 		kubeClient = fake.NewSimpleClientset()
 
 		vmiInformer, _ = testutils.NewFakeInformerFor(&k6tv1.VirtualMachineInstance{})
-		exitJob = make(chan struct{})
+		ExitJob = make(chan struct{})
 		controller, err = NewJobController(vmiInformer, virtClient)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -98,51 +98,69 @@ var _ = Describe("Update Machine Type", func() {
 		virtClient.EXPECT().VirtualMachine(v1.NamespaceAll).Return(vmInterface).AnyTimes()
 		virtClient.EXPECT().VirtualMachineInstance(v1.NamespaceAll).Return(vmiInterface).AnyTimes()
 		virtClient.EXPECT().CoreV1().Return(kubeClient.CoreV1()).AnyTimes()
+
+		MachineTypeGlob = machineTypeGlob
 	})
 
 	Describe("UpdateMachineTypes", func() {
 		Context("For VM with specified machine type", func() {
 
 			It("should remove machine type from VM spec", func() {
-				vm := newVMWithMachineType(unsupportedMachineType, false)
+				vm := newVMWithMachineType(machineTypeNeedsUpdate, false)
 
 				vmInterface.EXPECT().List(context.Background(), &v1.ListOptions{}).Return(&k6tv1.VirtualMachineList{
 					Items: []k6tv1.VirtualMachine{*vm},
 				}, nil).Times(1)
 
 				shouldExpectPatchMachineType(vm)
+
+				err := controller.UpdateMachineTypes()
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should apply 'restart-vm-required' label when VM is running", func() {
+				vm := newVMWithMachineType(machineTypeNeedsUpdate, true)
+
+				vmInterface.EXPECT().List(context.Background(), &v1.ListOptions{}).Return(&k6tv1.VirtualMachineList{
+					Items: []k6tv1.VirtualMachine{*vm},
+				}, nil).Times(1)
+
+				shouldExpectPatchMachineType(vm)
+				vmi := newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
+
+				shouldExpectGetVMI(vmi)
+				shouldExpectRestartRequiredLabel(vm)
 
 				err := controller.UpdateMachineTypes()
 				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should restart VM when VM is running and restartNow=true", func() {
-				vm := newVMWithMachineType(unsupportedMachineType, true)
+				vm := newVMWithMachineType(machineTypeNeedsUpdate, true)
 
 				vmInterface.EXPECT().List(context.Background(), &v1.ListOptions{}).Return(&k6tv1.VirtualMachineList{
 					Items: []k6tv1.VirtualMachine{*vm},
 				}, nil).Times(1)
 
 				shouldExpectPatchMachineType(vm)
-				vmi := newVMIWithMachineType(unsupportedMachineType, vm.Name)
-				SetTestRestartNow(true)
+				vmi := newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
+				RestartNow = true
 
 				shouldExpectGetVMI(vmi)
-				shouldExpectRestartRequiredLabel(vm)
 
 				vmInterface.EXPECT().Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{}).Times(1)
 
 				err := controller.UpdateMachineTypes()
 				Expect(err).ToNot(HaveOccurred())
 
-				SetTestRestartNow(false)
+				RestartNow = false
 			})
 
 			Context("for multiple VMs", func() {
 
-				It("should update machine types of all VMs", func() {
-					vmDefaultNamespace := newUnsupportedVMWithNamespace(v1.NamespaceDefault, 1)
-					vmKubevirtNamespace := newUnsupportedVMWithNamespace("kubevirt", 2)
+				It("should update machine types of all VMs with specified machine type", func() {
+					vmDefaultNamespace := newVMWithNamespace(v1.NamespaceDefault, 1)
+					vmKubevirtNamespace := newVMWithNamespace("kubevirt", 2)
 
 					// "kubevirt" namespace will be used because no
 					// namespace is specified
@@ -161,11 +179,11 @@ var _ = Describe("Update Machine Type", func() {
 				Context("for specified namespace", func() {
 					// "kubevirt" will not be used, therefore don't
 					// expect calls with "kubevirt" namespace
-					It("should only update machine types of VMs in specified namespace", func() {
-						vmDefaultNamespace := newUnsupportedVMWithNamespace(v1.NamespaceDefault, 1)
-						vmKubevirtNamespace := newUnsupportedVMWithNamespace("kubevirt", 3)
+					It("should only update machine types of VMs with specified machine type in specified namespace", func() {
+						vmDefaultNamespace := newVMWithNamespace(v1.NamespaceDefault, 1)
+						vmKubevirtNamespace := newVMWithNamespace("kubevirt", 3)
 
-						SetTestNamespace(v1.NamespaceDefault)
+						Namespace = v1.NamespaceDefault
 
 						vmList := []k6tv1.VirtualMachine{*vmDefaultNamespace, *vmKubevirtNamespace}
 
@@ -188,17 +206,17 @@ var _ = Describe("Update Machine Type", func() {
 						err := controller.UpdateMachineTypes()
 						Expect(err).ToNot(HaveOccurred())
 
-						SetTestNamespace(v1.NamespaceAll)
+						Namespace = v1.NamespaceAll
 					})
 				})
 
 				Context("for specified label-selector", func() {
-					It("should only update machine types of VMs that satisfy label-selector conditions", func() {
-						vmNoLabel := newUnsupportedVMWithLabel("", "", 1)
-						vmWithLabel := newUnsupportedVMWithLabel("kubevirt.io/schedulable", "true", 2)
-						vmWithWrongLabel := newUnsupportedVMWithLabel("kubevirt.io/schedulable", "false", 4)
+					It("should only update machine types of VMs with specified machine type that satisfy label-selector conditions", func() {
+						vmNoLabel := newVMWithLabel("", "", 1)
+						vmWithLabel := newVMWithLabel("kubevirt.io/schedulable", "true", 2)
+						vmWithWrongLabel := newVMWithLabel("kubevirt.io/schedulable", "false", 4)
 
-						SetTestLabelSelector("kubevirt.io/schedulable=true")
+						LabelSelector = "kubevirt.io/schedulable=true"
 
 						vmList := []k6tv1.VirtualMachine{*vmNoLabel, *vmWithLabel, *vmWithWrongLabel}
 						listOpts := &v1.ListOptions{
@@ -225,40 +243,21 @@ var _ = Describe("Update Machine Type", func() {
 						err := controller.UpdateMachineTypes()
 						Expect(err).ToNot(HaveOccurred())
 
-						SetTestLabelSelector("")
+						LabelSelector = ""
 					})
 				})
 			})
 		})
 
-		Context("For VM with 'q35' alias machine type", func() {
-			It("should restart VM when VM is running and restartNow=true", func() {
-				vm := newVMWithMachineType(aliasMachineType, true)
-				SetTestRestartNow(true)
-
-				vmInterface.EXPECT().List(context.Background(), &v1.ListOptions{}).Return(&k6tv1.VirtualMachineList{
-					Items: []k6tv1.VirtualMachine{*vm},
-				}, nil).Times(1)
-
-				vmi := newVMIWithMachineType(aliasMachineType, vm.Name)
-
-				shouldExpectGetVMI(vmi)
-				shouldExpectRestartRequiredLabel(vm)
-
-				vmInterface.EXPECT().Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{}).Times(1)
-
-				err := controller.UpdateMachineTypes()
-				Expect(err).ToNot(HaveOccurred())
-
-				SetTestRestartNow(false)
-			})
-		})
-
-		Context("For running VM with supported machine type", func() {
+		Context("For running VM with non-matching machine type", func() {
 			// Ensure there are no unexpected calls to patch VM,
 			// list VMI, or restart VM
 			It("Should not update VM machine type", func() {
-				vm := newVMWithMachineType(fmt.Sprintf("pc-q35-%s", LatestMachineTypeVersion), true)
+				vm := newVMWithMachineType(machineTypeNoUpdate, true)
+
+				vmi := newVMIWithMachineType(machineTypeNoUpdate, vm.Name)
+				RestartNow = true
+				shouldExpectGetVMI(vmi)
 
 				vmInterface.EXPECT().List(context.Background(), &v1.ListOptions{}).Return(&k6tv1.VirtualMachineList{
 					Items: []k6tv1.VirtualMachine{*vm},
@@ -266,41 +265,6 @@ var _ = Describe("Update Machine Type", func() {
 
 				err := controller.UpdateMachineTypes()
 				Expect(err).ToNot(HaveOccurred())
-			})
-		})
-	})
-
-	Describe("IsMachineTypeUpdated", func() {
-
-		DescribeTable("when machine type is", func(machineType string) {
-			needsUpdate, updatedMachineType, err := IsMachineTypeUpdated(machineType)
-			Expect(err).ToNot(HaveOccurred())
-			parsedMachineType := parseMachineType(machineType)
-			updateMachineTypeVersion := fmt.Sprintf("pc-q35-%s", LatestMachineTypeVersion)
-
-			if parsedMachineType >= MinimumSupportedMachineTypeVersion {
-				Expect(updatedMachineType).To(Equal(machineType))
-				Expect(needsUpdate).To(BeFalse())
-			} else if machineType == "q35" {
-				Expect(updatedMachineType).To(Equal(machineType))
-				Expect(needsUpdate).To(BeTrue())
-			} else {
-				Expect(updatedMachineType).To(Equal(updateMachineTypeVersion))
-				Expect(needsUpdate).To(BeTrue())
-			}
-		},
-			Entry("'q35' should mark VM as needing update", "q35"),
-			Entry("unsupported should mark VM as needing update", "pc-q35-rhel8.2.0"),
-			Entry("supported should not mark VM as needing update", "pc-q35-rhel9.2.0"),
-		)
-
-		Context("with invalid machine type input", func() {
-			It("should return an error", func() {
-				invalidMachineType := "pc-rhel9"
-				needsUpdate, updatedMachineType, err := IsMachineTypeUpdated(invalidMachineType)
-				Expect(needsUpdate).To(BeFalse())
-				Expect(updatedMachineType).To(Equal(invalidMachineType))
-				Expect(err).To(MatchError(fmt.Errorf("invalid machine type: %s", invalidMachineType)))
 			})
 		})
 	})
@@ -352,14 +316,15 @@ func newVMIWithMachineType(machineType string, name string) *k6tv1.VirtualMachin
 			Machine: &k6tv1.Machine{
 				Type: statusMachineType,
 			},
+			Phase: k6tv1.Running,
 		},
 	}
 
 	return testvmi
 }
 
-func newUnsupportedVMWithNamespace(namespace string, count int) *k6tv1.VirtualMachine {
-	vmName := fmt.Sprintf("test-vm%d-%s", count, unsupportedMachineType)
+func newVMWithNamespace(namespace string, count int) *k6tv1.VirtualMachine {
+	vmName := fmt.Sprintf("test-vm%d-%s", count, machineTypeNeedsUpdate)
 	testVM := &k6tv1.VirtualMachine{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      vmName,
@@ -371,7 +336,7 @@ func newUnsupportedVMWithNamespace(namespace string, count int) *k6tv1.VirtualMa
 				Spec: k6tv1.VirtualMachineInstanceSpec{
 					Domain: k6tv1.DomainSpec{
 						Machine: &k6tv1.Machine{
-							Type: unsupportedMachineType,
+							Type: machineTypeNeedsUpdate,
 						},
 					},
 				},
@@ -381,8 +346,8 @@ func newUnsupportedVMWithNamespace(namespace string, count int) *k6tv1.VirtualMa
 	return testVM
 }
 
-func newUnsupportedVMWithLabel(labelKey, labelValue string, count int) *k6tv1.VirtualMachine {
-	vmName := fmt.Sprintf("test-vm%d-%s", count, unsupportedMachineType)
+func newVMWithLabel(labelKey, labelValue string, count int) *k6tv1.VirtualMachine {
+	vmName := fmt.Sprintf("test-vm%d-%s", count, machineTypeNeedsUpdate)
 	testVM := &k6tv1.VirtualMachine{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      vmName,
@@ -394,7 +359,7 @@ func newUnsupportedVMWithLabel(labelKey, labelValue string, count int) *k6tv1.Vi
 				Spec: k6tv1.VirtualMachineInstanceSpec{
 					Domain: k6tv1.DomainSpec{
 						Machine: &k6tv1.Machine{
-							Type: unsupportedMachineType,
+							Type: machineTypeNeedsUpdate,
 						},
 					},
 				},
@@ -406,13 +371,4 @@ func newUnsupportedVMWithLabel(labelKey, labelValue string, count int) *k6tv1.Vi
 		testVM.Labels[labelKey] = labelValue
 	}
 	return testVM
-}
-
-func parseMachineType(machineType string) string {
-	parsedMachineType := "q35"
-	if machineType != "q35" {
-		splitMachineType := strings.Split(machineType, "-")
-		parsedMachineType = splitMachineType[2]
-	}
-	return parsedMachineType
 }

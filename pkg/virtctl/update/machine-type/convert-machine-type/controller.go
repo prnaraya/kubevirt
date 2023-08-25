@@ -14,7 +14,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 )
 
-var exitJob chan struct{}
+var ExitJob chan struct{}
 
 type JobController struct {
 	VmiInformer cache.SharedIndexInformer
@@ -47,20 +47,6 @@ func NewJobController(
 	return c, nil
 }
 
-func getVirtCli() (kubecli.KubevirtClient, error) {
-	clientConfig, err := kubecli.GetKubevirtClientConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	virtCli, err := kubecli.GetKubevirtClientFromRESTConfig(clientConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtCli, err
-}
-
 func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 	removeLabel := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
 	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(removeLabel), &k8sv1.PatchOptions{})
@@ -68,7 +54,7 @@ func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 }
 
 func (c *JobController) numVmisPendingUpdate() int {
-	vmList, err := c.VirtClient.VirtualMachine(namespace).List(context.Background(), &k8sv1.ListOptions{
+	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{
 		LabelSelector: `restart-vm-required=""`,
 	})
 	if err != nil {
@@ -117,24 +103,24 @@ func (c *JobController) Execute() bool {
 }
 
 func (c *JobController) execute(key string) error {
-	obj, exists, err := c.VmiInformer.GetIndexer().GetByKey(key)
+	obj, exists, err := c.VmiInformer.GetStore().GetByKey(key)
 	if err != nil {
 		return err
 	}
 
+	vmi, ok := obj.(*k6tv1.VirtualMachineInstance)
+	if !ok {
+		return nil
+	}
+
 	if !exists {
-		c.handleDeletedVmi(obj)
+		c.handleDeletedVmi(vmi)
 	}
 
 	return nil
 }
 
-func (c *JobController) handleDeletedVmi(obj interface{}) {
-	vmi, ok := obj.(*k6tv1.VirtualMachineInstance)
-	if !ok {
-		return
-	}
-
+func (c *JobController) handleDeletedVmi(vmi *k6tv1.VirtualMachineInstance) {
 	vm, err := c.VirtClient.VirtualMachine(vmi.Namespace).Get(context.Background(), vmi.Name, &k8sv1.GetOptions{})
 	if err != nil {
 		fmt.Println(err)
@@ -149,7 +135,7 @@ func (c *JobController) handleDeletedVmi(obj interface{}) {
 	// check that VM machine type is not outdated in the case that a VM
 	// has been restarted for a different reason before its machine type
 	// has been updated
-	updated := IsMachineTypeUpdated(vm)
+	updated := isMachineTypeUpdated(vm)
 	if err != nil {
 		fmt.Print(err)
 		return
@@ -172,5 +158,5 @@ func (c *JobController) handleDeletedVmi(obj interface{}) {
 		return
 	}
 
-	close(exitJob)
+	close(ExitJob)
 }

@@ -30,20 +30,20 @@ var _ = Describe("Informers", func() {
 	var kubeClient *fake.Clientset
 	var vmiInformer cache.SharedIndexInformer
 	var vmiSource *framework.FakeControllerSource
+	var mockQueue *testutils.MockWorkQueue
+	var vmiFeeder *testutils.VirtualMachineFeeder
 	var controller *JobController
-	var exitJob chan struct{}
 	var vm *virtv1.VirtualMachine
 	var vmi *virtv1.VirtualMachineInstance
 	var err error
 
 	initController := func() {
-		vmiInformer, vmiSource = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
-		exitJob = make(chan struct{})
 		controller, err = NewJobController(vmiInformer, virtClient)
 		Expect(err).ToNot(HaveOccurred())
 
-		go controller.VmiInformer.Run(exitJob)
-		Expect(cache.WaitForCacheSync(exitJob, controller.VmiInformer.HasSynced)).To(BeTrue())
+		mockQueue = testutils.NewMockWorkQueue(controller.Queue)
+		controller.Queue = mockQueue
+		vmiFeeder = testutils.NewVirtualMachineFeeder(mockQueue, vmiSource)
 	}
 
 	shouldExpectGetVM := func(vm *virtv1.VirtualMachine) {
@@ -101,6 +101,7 @@ var _ = Describe("Informers", func() {
 			vmInterface = kubecli.NewMockVirtualMachineInterface(ctrl)
 			vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 
+			vmiInformer, vmiSource = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
 			initController()
 			kubeClient = fake.NewSimpleClientset()
 
@@ -108,7 +109,7 @@ var _ = Describe("Informers", func() {
 			virtClient.EXPECT().VirtualMachineInstance(gomock.Any()).Return(vmiInterface).AnyTimes()
 
 			vm = newVMWithRestartLabel()
-			vmi = newVMIWithMachineType(vm.Spec.Template.Spec.Domain.Machine.Type, vm.Name)
+			vmi = newVMIWithMachineType(machineTypeNoUpdate, vm.Name)
 
 			shouldExpectGetVM(vm)
 			shouldExpectVMICreation(vmi)
@@ -118,25 +119,24 @@ var _ = Describe("Informers", func() {
 				Items: []virtv1.VirtualMachine{},
 			}, nil).Times(1)
 
-			vmiSource.Add(vmi)
+			ExitJob = make(chan struct{})
+			go vmiInformer.Run(ExitJob)
+			Expect(cache.WaitForCacheSync(ExitJob, vmiInformer.HasSynced)).To(BeTrue())
+			vmiFeeder.Add(vmi)
 		})
 
 		AfterEach(func() {
-			close(exitJob)
+			close(ExitJob)
 		})
+
 		Context("if VM machine type has been updated", func() {
 			It("should remove `restart-vm-required` label from VM", func() {
 				shouldExpectVMIDeletion(vmi)
 				shouldExpectRemoveLabel(vm)
 
-				vmiSource.Delete(vmi)
+				vmiFeeder.Delete(vmi)
 				controller.Execute()
-			})
-
-			When("no VMs remain with `restart-vm-required` label", func() {
-				It("should signal job termination", func() {
-					Expect(exitJob).To(BeClosed())
-				})
+				Expect(ExitJob).To(BeClosed(), "should signal job termination when no VMs with 'restart-vm-required' label remain")
 			})
 		})
 
@@ -144,8 +144,9 @@ var _ = Describe("Informers", func() {
 			It("should not remove `restart-vm-required` label from VM", func() {
 				shouldExpectVMIDeletion(vmi)
 
-				vmiSource.Delete(vmi)
+				vmiFeeder.Delete(vmi)
 				controller.Execute()
+
 				Expect(vm.Labels).To(HaveKey("restart-vm-required"))
 			})
 		})
@@ -163,11 +164,7 @@ func newVMWithRestartLabel() *virtv1.VirtualMachine {
 			Running: pointer.Bool(false),
 			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
 				Spec: virtv1.VirtualMachineInstanceSpec{
-					Domain: virtv1.DomainSpec{
-						Machine: &virtv1.Machine{
-							Type: unsupportedMachineType,
-						},
-					},
+					Domain: virtv1.DomainSpec{},
 				},
 			},
 		},

@@ -15,18 +15,18 @@ import (
 
 var (
 	// machine type(s) which should be updated
-	machineTypeGlob = ""
+	MachineTypeGlob = ""
 
 	// by default, update machine type across all namespaces
-	namespace     = k8sv1.NamespaceAll
-	labelSelector = ""
+	Namespace     = k8sv1.NamespaceAll
+	LabelSelector = ""
 
 	// by default, should require manual restarting of VMIs
-	restartNow = false
+	RestartNow = false
 )
 
 func matchMachineType(machineType string) (bool, error) {
-	matchMachineType, err := path.Match(machineTypeGlob, machineType)
+	matchMachineType, err := path.Match(MachineTypeGlob, machineType)
 	if !matchMachineType || err != nil {
 		return false, err
 	}
@@ -34,7 +34,7 @@ func matchMachineType(machineType string) (bool, error) {
 	return true, nil
 }
 
-func IsMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
+func isMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
 	return vm.Spec.Template.Spec.Domain.Machine == nil
 }
 
@@ -47,12 +47,12 @@ func (c *JobController) patchMachineType(vm *k6tv1.VirtualMachine) error {
 
 func (c *JobController) UpdateMachineTypes() error {
 	listOpts := &k8sv1.ListOptions{}
-	if labelSelector != "" {
+	if LabelSelector != "" {
 		listOpts = &k8sv1.ListOptions{
-			LabelSelector: labelSelector,
+			LabelSelector: LabelSelector,
 		}
 	}
-	vmList, err := c.VirtClient.VirtualMachine(namespace).List(context.Background(), listOpts)
+	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), listOpts)
 
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func (c *JobController) UpdateMachineTypes() error {
 			}
 
 			// for running VMs, check if machine type in VMI status matches glob
-			matchMachineType, err := path.Match(machineTypeGlob, vmi.Status.Machine.Type)
+			matchMachineType, err := path.Match(MachineTypeGlob, vmi.Status.Machine.Type)
 			if !matchMachineType {
 				if err != nil {
 					fmt.Print(err)
@@ -85,14 +85,14 @@ func (c *JobController) UpdateMachineTypes() error {
 
 			// adding the warning label to the running VMs to indicate to the user
 			// they must manually be restarted
-			err = c.AddWarningLabel(&vm)
+			err = c.addWarningLabel(&vm)
 			if err != nil {
 				fmt.Print(err)
 				continue
 			}
 
 			// if force restart flag is set, restart running VMs immediately
-			if restartNow {
+			if RestartNow {
 				err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
 				if err != nil {
 					fmt.Print(err)
@@ -116,21 +116,9 @@ func (c *JobController) UpdateMachineTypes() error {
 	return nil
 }
 
-func (c *JobController) AddWarningLabel(vm *k6tv1.VirtualMachine) error {
+func (c *JobController) addWarningLabel(vm *k6tv1.VirtualMachine) error {
 	addLabel := `{"metadata":{"labels":{"restart-vm-required":""}}}`
 
 	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(addLabel), &k8sv1.PatchOptions{})
 	return err
-}
-
-func SetTestRestartNow(testRestart bool) {
-	restartNow = testRestart
-}
-
-func SetTestNamespace(testNamespace string) {
-	namespace = testNamespace
-}
-
-func SetTestLabelSelector(testLabelSelector string) {
-	labelSelector = testLabelSelector
 }

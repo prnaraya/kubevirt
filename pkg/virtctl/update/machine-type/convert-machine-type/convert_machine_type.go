@@ -21,11 +21,11 @@ func Run() {
 		fmt.Println("No machine type was specified.")
 		os.Exit(1)
 	}
-	machineTypeGlob = machineTypeEnv
+	MachineTypeGlob = machineTypeEnv
 
 	restartEnv, exists := os.LookupEnv("FORCE_RESTART")
 	if exists {
-		restartNow, err = strconv.ParseBool(restartEnv)
+		RestartNow, err = strconv.ParseBool(restartEnv)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -34,12 +34,12 @@ func Run() {
 
 	namespaceEnv, exists := os.LookupEnv("NAMESPACE")
 	if exists && namespaceEnv != "" {
-		namespace = namespaceEnv
+		Namespace = namespaceEnv
 	}
 
 	selectorEnv, exists := os.LookupEnv("LABEL_SELECTOR")
 	if exists {
-		labelSelector = selectorEnv
+		LabelSelector = selectorEnv
 	}
 
 	// set up JobController
@@ -48,7 +48,7 @@ func Run() {
 		os.Exit(1)
 	}
 
-	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", namespace, fields.Everything())
+	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
 	vmiInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
 
 	exitJob := make(chan struct{})
