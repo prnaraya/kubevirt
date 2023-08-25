@@ -2,7 +2,6 @@ package convertmachinetype_test
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -40,11 +39,11 @@ var _ = Describe("Informers", func() {
 	initController := func() {
 		vmiInformer, vmiSource = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
 		exitJob = make(chan struct{})
-		controller, err = NewJobController(vmiInformer, virtClient, exitJob)
+		controller, err = NewJobController(vmiInformer, virtClient)
 		Expect(err).ToNot(HaveOccurred())
 
 		go controller.VmiInformer.Run(exitJob)
-		Expect(cache.WaitForCacheSync(controller.ExitJob, controller.VmiInformer.HasSynced)).To(BeTrue())
+		Expect(cache.WaitForCacheSync(exitJob, controller.VmiInformer.HasSynced)).To(BeTrue())
 	}
 
 	shouldExpectGetVM := func(vm *virtv1.VirtualMachine) {
@@ -110,7 +109,6 @@ var _ = Describe("Informers", func() {
 
 			vm = newVMWithRestartLabel()
 			vmi = newVMIWithMachineType(vm.Spec.Template.Spec.Domain.Machine.Type, vm.Name)
-			vm.Spec.Template.Spec.Domain.Machine.Type = fmt.Sprintf("pc-q35-%s", LatestMachineTypeVersion)
 
 			shouldExpectGetVM(vm)
 			shouldExpectVMICreation(vmi)
@@ -132,11 +130,12 @@ var _ = Describe("Informers", func() {
 				shouldExpectRemoveLabel(vm)
 
 				vmiSource.Delete(vmi)
+				controller.Execute()
 			})
 
 			When("no VMs remain with `restart-vm-required` label", func() {
 				It("should signal job termination", func() {
-					Expect(controller.ExitJob).To(BeClosed())
+					Expect(exitJob).To(BeClosed())
 				})
 			})
 		})
@@ -146,6 +145,7 @@ var _ = Describe("Informers", func() {
 				shouldExpectVMIDeletion(vmi)
 
 				vmiSource.Delete(vmi)
+				controller.Execute()
 				Expect(vm.Labels).To(HaveKey("restart-vm-required"))
 			})
 		})
