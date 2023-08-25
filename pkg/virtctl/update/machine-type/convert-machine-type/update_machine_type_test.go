@@ -37,7 +37,6 @@ var _ = Describe("Update Machine Type", func() {
 	var kubeClient *fake.Clientset
 	var vmiInformer cache.SharedIndexInformer
 	var controller *JobController
-	var exitJob chan struct{}
 	var err error
 
 	shouldExpectGetVMI := func(vmi *k6tv1.VirtualMachineInstance) {
@@ -68,16 +67,16 @@ var _ = Describe("Update Machine Type", func() {
 	}
 
 	shouldExpectPatchMachineType := func(vm *k6tv1.VirtualMachine) {
-		patchData := fmt.Sprintf(`{"spec":{"template":{"spec":{"domain":{"machine":{"type":"pc-q35-%s"}}}}}}`, LatestMachineTypeVersion)
+		patchData := `[{"op": "remove", "path": "/spec/template/spec/domain/machine"}]`
 
-		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.MergePatchType, []byte(patchData), &v1.PatchOptions{}).Times(1)
+		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &v1.PatchOptions{}).Times(1)
 
 		kubeClient.Fake.PrependReactor("patch", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
 			patch, ok := action.(testing.PatchAction)
 			Expect(ok).To(BeTrue())
 			Expect(patch.GetPatch()).To(Equal([]byte(patchData)))
 			Expect(patch.GetPatchType()).To(Equal(types.MergePatchType))
-			Expect(vm.Spec.Template.Spec.Domain.Machine.Type).To(Equal(fmt.Sprintf("pc-q35-%s", LatestMachineTypeVersion)))
+			Expect(vm.Spec.Template.Spec.Domain.Machine).To(BeNil())
 			return true, vm, nil
 		})
 	}
@@ -91,7 +90,7 @@ var _ = Describe("Update Machine Type", func() {
 
 		vmiInformer, _ = testutils.NewFakeInformerFor(&k6tv1.VirtualMachineInstance{})
 		exitJob = make(chan struct{})
-		controller, err = NewJobController(vmiInformer, virtClient, exitJob)
+		controller, err = NewJobController(vmiInformer, virtClient)
 		Expect(err).ToNot(HaveOccurred())
 
 		virtClient.EXPECT().VirtualMachine(v1.NamespaceDefault).Return(vmInterface).AnyTimes()
@@ -102,9 +101,9 @@ var _ = Describe("Update Machine Type", func() {
 	})
 
 	Describe("UpdateMachineTypes", func() {
-		Context("For VM with unsupported machine type", func() {
+		Context("For VM with specified machine type", func() {
 
-			It("should update VM machine type to latest version", func() {
+			It("should remove machine type from VM spec", func() {
 				vm := newVMWithMachineType(unsupportedMachineType, false)
 
 				vmInterface.EXPECT().List(context.Background(), &v1.ListOptions{}).Return(&k6tv1.VirtualMachineList{
