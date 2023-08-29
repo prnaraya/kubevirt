@@ -500,7 +500,7 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 		log.Log.Object(migration).Errorf("target attachment pod %s/%s shutdown during migration", attachmentPod.Namespace, attachmentPod.Name)
 	} else {
 		var err error
-		migration, migrationCopy, err = c.processMigrationPhase(migration, migrationCopy, pod, attachmentPod, podExists, attachmentPodExists, conditionManager, vmiConditionManager, vmi, syncError)
+		migrationCopy, err = c.processMigrationPhase(migration, migrationCopy, pod, attachmentPod, podExists, attachmentPodExists, conditionManager, vmiConditionManager, vmi, syncError)
 		if err != nil {
 			return err
 		}
@@ -524,12 +524,12 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 	return nil
 }
 
-func (c *MigrationController) processMigrationPhase(migration, migrationCopy *virtv1.VirtualMachineInstanceMigration, pod, attachmentPod *k8sv1.Pod, podExists, attachmentPodExists bool, conditionManager *controller.VirtualMachineInstanceMigrationConditionManager, vmiConditionManager *controller.VirtualMachineInstanceConditionManager, vmi *virtv1.VirtualMachineInstance, syncError error) (updatedMigration, updatedMigrationCopy *virtv1.VirtualMachineInstanceMigration, err error) {
+func (c *MigrationController) processMigrationPhase(migration, migrationCopy *virtv1.VirtualMachineInstanceMigration, pod, attachmentPod *k8sv1.Pod, podExists, attachmentPodExists bool, conditionManager *controller.VirtualMachineInstanceMigrationConditionManager, vmiConditionManager *controller.VirtualMachineInstanceConditionManager, vmi *virtv1.VirtualMachineInstance, syncError error) (*virtv1.VirtualMachineInstanceMigration, error) {
 	switch migration.Status.Phase {
 	case virtv1.MigrationPhaseUnset:
 		canMigrate, err := c.canMigrateVMI(migration, vmi)
 		if err != nil {
-			return migration, migrationCopy, err
+			return migrationCopy, err
 		}
 
 		if canMigrate {
@@ -592,7 +592,7 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 
 			_, err := c.clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.JSONPatchType, []byte(patchOps), v1.PatchOptions{})
 			if err != nil {
-				return migration, migrationCopy, err
+				return migrationCopy, err
 			}
 		}
 
@@ -604,7 +604,7 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 			log.Log.Object(migration).Infof("VMI reported migration succeeded.")
 		}
 	}
-	return migration, migrationCopy, nil
+	return migrationCopy, nil
 }
 
 func setTargetPodSELinuxLevel(pod *k8sv1.Pod, vmiSeContext string) error {
@@ -1264,9 +1264,13 @@ func (c *MigrationController) sync(key string, migration *virtv1.VirtualMachineI
 			}
 
 			// patch VMI annotations and set RuntimeUser in preparation for target pod creation
-			err = c.setupVMIRuntimeUser(vmi)
-			if err != nil {
-				return err
+			patches := c.setupVMIRuntimeUser(vmi)
+
+			if len(patches) != 0 {
+				vmi, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, controller.GeneratePatchBytes(patches), &v1.PatchOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to set VMI RuntimeUser: %v", err)
+				}
 			}
 
 			return c.handleTargetPodCreation(key, migration, vmi, sourcePod)
@@ -1325,8 +1329,9 @@ func (c *MigrationController) sync(key string, migration *virtv1.VirtualMachineI
 	return nil
 }
 
-func (c *MigrationController) setupVMIRuntimeUser(vmi *virtv1.VirtualMachineInstance) error {
+func (c *MigrationController) setupVMIRuntimeUser(vmi *virtv1.VirtualMachineInstance) []string {
 	var patches []string
+
 	if !c.clusterConfig.RootEnabled() {
 		// The cluster is configured for non-root VMs, ensure the VMI is non-root.
 		// If the VMI is root, the migration will be a root -> non-root migration.
@@ -1353,14 +1358,8 @@ func (c *MigrationController) setupVMIRuntimeUser(vmi *virtv1.VirtualMachineInst
 			}
 		}
 	}
-	if len(patches) != 0 {
-		_, err := c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, controller.GeneratePatchBytes(patches), &v1.PatchOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to set VMI RuntimeUser: %v", err)
-		}
-	}
 
-	return nil
+	return patches
 }
 
 func (c *MigrationController) listMatchingTargetPods(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance) ([]*k8sv1.Pod, error) {
