@@ -89,7 +89,6 @@ var _ = Describe("Update Machine Type", func() {
 		kubeClient = fake.NewSimpleClientset()
 
 		vmiInformer, _ = testutils.NewFakeInformerFor(&k6tv1.VirtualMachineInstance{})
-		ExitJob = make(chan struct{})
 		controller, err = NewJobController(vmiInformer, virtClient)
 		Expect(err).ToNot(HaveOccurred())
 

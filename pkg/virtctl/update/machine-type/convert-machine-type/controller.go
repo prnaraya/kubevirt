@@ -14,12 +14,11 @@ import (
 	"kubevirt.io/client-go/kubecli"
 )
 
-var ExitJob chan struct{}
-
 type JobController struct {
 	VmiInformer cache.SharedIndexInformer
 	VirtClient  kubecli.KubevirtClient
 	Queue       workqueue.RateLimitingInterface
+	ExitJob     chan struct{}
 }
 
 func NewJobController(
@@ -30,11 +29,19 @@ func NewJobController(
 		VmiInformer: vmiInformer,
 		VirtClient:  virtClient,
 		Queue:       workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		ExitJob:     make(chan struct{}),
 	}
 
 	_, err := vmiInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		DeleteFunc: func(obj interface{}) {
+		AddFunc: func(obj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(obj)
+			if err == nil {
+				c.Queue.Add(key)
+			}
+		},
+
+		DeleteFunc: func(obj interface{}) {
+			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err == nil {
 				c.Queue.Add(key)
 			}
@@ -50,7 +57,16 @@ func NewJobController(
 func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 	removeLabel := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
 	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(removeLabel), &k8sv1.PatchOptions{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	numVmisPendingUpdate := c.numVmisPendingUpdate()
+	fmt.Printf("Num vmis pending update: %d", numVmisPendingUpdate)
+	if numVmisPendingUpdate == 0 {
+		close(c.ExitJob)
+	}
+	return nil
 }
 
 func (c *JobController) numVmisPendingUpdate() int {
@@ -150,13 +166,4 @@ func (c *JobController) handleDeletedVmi(vmi *k6tv1.VirtualMachineInstance) {
 	if err != nil {
 		fmt.Println(err)
 	}
-
-	// ensure all 'restart-vm-required' labels on affected VMs
-	// are cleared using label selector
-	numVmisPendingUpdate := c.numVmisPendingUpdate()
-	if numVmisPendingUpdate != 0 {
-		return
-	}
-
-	close(ExitJob)
 }

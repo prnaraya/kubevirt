@@ -83,21 +83,22 @@ func (c *JobController) UpdateMachineTypes() error {
 
 			c.patchMachineType(&vm)
 
+			// if force restart flag is set, restart running VMs immediately
+			// don't apply warning label to VMs being restarted
+			if RestartNow {
+				err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
+				if err != nil {
+					fmt.Print(err)
+				}
+				continue
+			}
+
 			// adding the warning label to the running VMs to indicate to the user
 			// they must manually be restarted
 			err = c.addWarningLabel(&vm)
 			if err != nil {
 				fmt.Print(err)
 				continue
-			}
-
-			// if force restart flag is set, restart running VMs immediately
-			if RestartNow {
-				err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
-				if err != nil {
-					fmt.Print(err)
-					continue
-				}
 			}
 		} else {
 			// for stopped VMs, check if machine type in VM spec matches glob
