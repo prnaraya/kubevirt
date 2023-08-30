@@ -51,14 +51,12 @@ func Run() {
 	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
 	vmiInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
 
-	exitJob := make(chan struct{})
-
 	controller, err := NewJobController(vmiInformer, virtCli)
 	if err != nil {
 		os.Exit(1)
 	}
 
-	go controller.run(exitJob)
+	go controller.run(controller.ExitJob)
 
 	err = controller.UpdateMachineTypes()
 	if err != nil {
@@ -67,10 +65,10 @@ func Run() {
 
 	numVmisPendingUpdate := controller.numVmisPendingUpdate()
 	if numVmisPendingUpdate <= 0 {
-		close(exitJob)
+		close(controller.ExitJob)
 	}
 
-	<-exitJob
+	<-controller.ExitJob
 
 	os.Exit(0)
 }
