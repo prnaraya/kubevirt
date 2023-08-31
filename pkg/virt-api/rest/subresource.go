@@ -278,19 +278,24 @@ func getRunningJson(vm *v1.VirtualMachine, running bool) string {
 		runStrategy = v1.RunStrategyAlways
 	}
 	if vm.Spec.RunStrategy != nil {
-		return fmt.Sprintf("{\"spec\":{\"runStrategy\": \"%s\"}}", runStrategy)
+		return fmt.Sprintf(`{"spec":{"runStrategy": "%s"}}`, runStrategy)
 	} else {
-		return fmt.Sprintf("{\"spec\":{\"running\": %t}}", running)
+		return fmt.Sprintf(`{"spec":{"running": %t}}`, running)
 	}
 }
 
 func getUpdateTerminatingSecondsGracePeriod(gracePeriod int64) string {
-	return fmt.Sprintf("{\"spec\":{\"terminationGracePeriodSeconds\": %d }}", gracePeriod)
+	return fmt.Sprintf(`{"spec":{"terminationGracePeriodSeconds": %d }}`, gracePeriod)
 }
 
 func (app *SubresourceAPIApp) patchVMStatusStopped(vmi *v1.VirtualMachineInstance, vm *v1.VirtualMachine, response *restful.Response, bodyStruct *v1.StopOptions) (error, error) {
+	stopChangeRequestData := make(map[string](string))
+	if bodyStruct.GracePeriod != nil {
+		stopChangeRequestData["grace-period"] = fmt.Sprintf("%d", *bodyStruct.GracePeriod)
+	}
+
 	bodyString, err := getChangeRequestJson(vm,
-		v1.VirtualMachineStateChangeRequest{Action: v1.StopRequest, UID: &vmi.UID})
+		v1.VirtualMachineStateChangeRequest{Action: v1.StopRequest, Data: stopChangeRequestData, UID: &vmi.UID})
 	if err != nil {
 		writeError(errors.NewInternalError(err), response)
 		return nil, err
