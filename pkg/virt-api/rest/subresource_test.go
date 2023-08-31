@@ -1599,10 +1599,10 @@ var _ = Describe("VirtualMachineInstance Subresources", func() {
 
 			statusErr := ExpectStatusErrorWithCode(recorder, http.StatusConflict)
 			// check the msg string that would be presented to virtctl output
-			Expect(statusErr.Error()).To(ContainSubstring("Halted only supports manual stop requests with a shorter graceperiod"))
+			Expect(statusErr.Error()).To(ContainSubstring("Halted only supports manual stop requests with a shorter grace-period"))
 		})
 
-		DescribeTable("for VM with RunStrategyHalted, should", func(terminationGracePeriod *int64, graceperiod *int64, shouldFail bool) {
+		DescribeTable("for VM with RunStrategyHalted", func(terminationGracePeriod *int64, graceperiod *int64, shouldFail bool) {
 			vm := newVirtualMachineWithRunStrategy(v1.RunStrategyHalted)
 			vmi := newVirtualMachineInstanceInPhase(v1.Running)
 
@@ -1633,17 +1633,17 @@ var _ = Describe("VirtualMachineInstance Subresources", func() {
 			if shouldFail {
 				statusErr := ExpectStatusErrorWithCode(recorder, http.StatusConflict)
 				// check the msg string that would be presented to virtctl output
-				Expect(statusErr.Error()).To(ContainSubstring("Halted only supports manual stop requests with a shorter graceperiod"))
+				Expect(statusErr.Error()).To(ContainSubstring("Halted only supports manual stop requests with a shorter grace-period"))
 			} else {
 				Expect(response.Error()).ToNot(HaveOccurred())
 				Expect(response.StatusCode()).To(Equal(http.StatusAccepted))
 			}
 		},
-			Entry("fail with nil graceperiod", pointer.Int64(int64(1800)), nil, true),
-			Entry("fail with equal graceperiod", pointer.Int64(int64(1800)), pointer.Int64(int64(1800)), true),
-			Entry("fail with greater graceperiod", pointer.Int64(int64(1800)), pointer.Int64(int64(2400)), true),
-			Entry("not fail with non-nil graceperiod and nil termination graceperiod", nil, pointer.Int64(int64(1800)), false),
-			Entry("not fail with shorter graceperiod and non-nil termination graceperiod", pointer.Int64(int64(1800)), pointer.Int64(int64(800)), false),
+			Entry("should fail with nil grace-period", pointer.Int64(int64(1800)), nil, true),
+			Entry("should fail with equal grace-period", pointer.Int64(int64(1800)), pointer.Int64(int64(1800)), true),
+			Entry("should fail with greater grace-period", pointer.Int64(int64(1800)), pointer.Int64(int64(2400)), true),
+			Entry("should not fail with non-nil graceperiod and nil termination grace-period", nil, pointer.Int64(int64(1800)), false),
+			Entry("should not fail with shorter graceperiod and non-nil termination grace-period", pointer.Int64(int64(1800)), pointer.Int64(int64(800)), false),
 		)
 
 		DescribeTable("should not fail on VM with RunStrategy", func(runStrategy v1.VirtualMachineRunStrategy) {
