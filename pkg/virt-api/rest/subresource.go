@@ -663,7 +663,7 @@ func (app *SubresourceAPIApp) StopVMRequestHandler(request *restful.Request, res
 			return
 		}
 		if bodyStruct.GracePeriod == nil || (vmi.DeletionGracePeriodSeconds != nil && *bodyStruct.GracePeriod >= *vmi.DeletionGracePeriodSeconds) {
-			writeError(errors.NewConflict(v1.Resource("virtualmachine"), name, fmt.Errorf("%v only supports manual stop requests with shorter grace-period", v1.RunStrategyHalted)), response)
+			writeError(errors.NewConflict(v1.Resource("virtualmachine"), name, fmt.Errorf("%v only supports manual stop requests with a shorter grace-period", v1.RunStrategyHalted)), response)
 			return
 		}
 		// same behavior as RunStrategyManual
