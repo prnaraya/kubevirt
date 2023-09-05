@@ -47,7 +47,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 		var ok bool
 
 		Eventually(func() bool {
-			jobs, err := virtClient.BatchV1().Jobs(metav1.NamespaceDefault).List(context.Background(), metav1.ListOptions{})
+			jobs, err := virtClient.BatchV1().Jobs("kubevirt").List(context.Background(), metav1.ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			job, ok = hasJob(jobs)
 			return ok
@@ -75,7 +75,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 
 			Expect(vmNeedsUpdateStopped.Spec.Template.Spec.Domain.Machine).To(BeNil())
 			Expect(vmNeedsUpdateRunning.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vmNoUpdate.Spec.Template.Spec.Domain.Machine).To(Equal(machineTypeNoUpdate))
+			Expect(vmNoUpdate.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNoUpdate))
 
 			Expect(vmNeedsUpdateRunning.Labels).To(HaveKey(restartRequiredLabel))
 
@@ -193,7 +193,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Expect(vmNamespaceOtherRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
 			Expect(vmNamespaceOtherWithLabelStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
 			Expect(vmNamespaceOtherWithLabelRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-			Expect(vmNoUpdate.Spec.Template.Spec.Domain.Machine).To(Equal(machineTypeNoUpdate))
+			Expect(vmNoUpdate.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNoUpdate))
 
 			Eventually(func() bool {
 				vm, err := virtClient.VirtualMachine(util.NamespaceTestDefault).Get(context.Background(), vmNamespaceDefaultWithLabelRunning.Name, &metav1.GetOptions{})
