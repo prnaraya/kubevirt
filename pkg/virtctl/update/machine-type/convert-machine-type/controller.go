@@ -3,6 +3,7 @@ package convertmachinetype
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -106,6 +107,7 @@ func (c *JobController) Execute() bool {
 	if quit {
 		return false
 	}
+
 	defer c.Queue.Done(key)
 	err := c.execute(key.(string))
 
@@ -119,25 +121,21 @@ func (c *JobController) Execute() bool {
 }
 
 func (c *JobController) execute(key string) error {
-	obj, exists, err := c.VmiInformer.GetStore().GetByKey(key)
+	_, exists, err := c.VmiInformer.GetStore().GetByKey(key)
 	if err != nil {
 		return err
 	}
 
-	vmi, ok := obj.(*k6tv1.VirtualMachineInstance)
-	if !ok {
-		return nil
-	}
-
 	if !exists {
-		c.handleDeletedVmi(vmi)
+		namespace, name := parseKey(key)
+		c.handleDeletedVmi(namespace, name)
 	}
 
 	return nil
 }
 
-func (c *JobController) handleDeletedVmi(vmi *k6tv1.VirtualMachineInstance) {
-	vm, err := c.VirtClient.VirtualMachine(vmi.Namespace).Get(context.Background(), vmi.Name, &k8sv1.GetOptions{})
+func (c *JobController) handleDeletedVmi(namespace, name string) {
+	vm, err := c.VirtClient.VirtualMachine(namespace).Get(context.Background(), name, &k8sv1.GetOptions{})
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -166,4 +164,9 @@ func (c *JobController) handleDeletedVmi(vmi *k6tv1.VirtualMachineInstance) {
 	if err != nil {
 		fmt.Println(err)
 	}
+}
+
+func parseKey(key string) (namespace, name string) {
+	keySubstrings := strings.Split(key, "/")
+	return keySubstrings[0], keySubstrings[1]
 }

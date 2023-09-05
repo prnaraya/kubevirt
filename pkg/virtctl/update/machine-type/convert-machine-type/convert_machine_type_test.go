@@ -14,7 +14,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
-	framework "k8s.io/client-go/tools/cache/testing"
 	"k8s.io/utils/pointer"
 	k6tv1 "kubevirt.io/api/core/v1"
 	virtv1 "kubevirt.io/api/core/v1"
@@ -31,9 +30,7 @@ var _ = Describe("Informers", func() {
 	var vmiInterface *kubecli.MockVirtualMachineInstanceInterface
 	var kubeClient *fake.Clientset
 	var vmiInformer cache.SharedIndexInformer
-	var vmiSource *framework.FakeControllerSource
 	var mockQueue *testutils.MockWorkQueue
-	var vmiFeeder *testutils.VirtualMachineFeeder
 	var controller *JobController
 	var err error
 
@@ -84,6 +81,24 @@ var _ = Describe("Informers", func() {
 		})
 	}
 
+	addVmi := func(vmi *k6tv1.VirtualMachineInstance) {
+		key, err := cache.MetaNamespaceKeyFunc(vmi)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+		mockQueue.Add(key)
+		err = vmiInformer.GetStore().Add(vmi)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	}
+
+	deleteVmi := func(vmi *k6tv1.VirtualMachineInstance) {
+		key, err := cache.MetaNamespaceKeyFunc(vmi)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+		mockQueue.Add(key)
+		err = vmiInformer.GetStore().Delete(vmi)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	}
+
 	Describe("When VMI is deleted", func() {
 		var vm *k6tv1.VirtualMachine
 		var vmi *k6tv1.VirtualMachineInstance
@@ -95,14 +110,13 @@ var _ = Describe("Informers", func() {
 			vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 			kubeClient = fake.NewSimpleClientset()
 
-			vmiInformer, vmiSource = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
+			vmiInformer, _ = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
 
 			controller, err = NewJobController(vmiInformer, virtClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			mockQueue = testutils.NewMockWorkQueue(controller.Queue)
 			controller.Queue = mockQueue
-			vmiFeeder = testutils.NewVirtualMachineFeeder(mockQueue, vmiSource)
 
 			go controller.VmiInformer.Run(controller.ExitJob)
 			Expect(cache.WaitForCacheSync(controller.ExitJob, controller.VmiInformer.HasSynced)).To(BeTrue())
@@ -111,21 +125,17 @@ var _ = Describe("Informers", func() {
 			virtClient.EXPECT().VirtualMachineInstance(gomock.Any()).Return(vmiInterface).AnyTimes()
 		})
 
-		AfterEach(func() {
-			close(controller.ExitJob)
-		})
-
 		Context("if VM machine type has not been updated", func() {
 			It("should not remove `restart-vm-required` label from VM", func() {
 				vm = newVMWithRestartLabel(machineTypeNeedsUpdate)
 				vmi = newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
-				vmiFeeder.Add(vmi)
+				addVmi(vmi)
 
 				shouldExpectGetVM(vm)
 				shouldExpectVMICreation(vmi)
 				shouldExpectVMIDeletion(vmi)
 
-				vmiFeeder.Delete(vmi)
+				deleteVmi(vmi)
 				controller.Execute()
 
 				Expect(vm.Labels).To(HaveKey("restart-vm-required"))
@@ -136,7 +146,7 @@ var _ = Describe("Informers", func() {
 			It("should remove `restart-vm-required` label from VM", func() {
 				vm = newVMWithRestartLabel("")
 				vmi = newVMIWithMachineType(machineTypeNoUpdate, vm.Name)
-				vmiFeeder.Add(vmi)
+				addVmi(vmi)
 
 				shouldExpectGetVM(vm)
 				shouldExpectVMICreation(vmi)
@@ -149,7 +159,7 @@ var _ = Describe("Informers", func() {
 				shouldExpectVMIDeletion(vmi)
 				shouldExpectRemoveLabel(vm)
 
-				vmiFeeder.Delete(vmi)
+				deleteVmi(vmi)
 				controller.Execute()
 				Expect(controller.ExitJob).To(BeClosed(), "should signal job termination when no VMs with 'restart-vm-required' label remain")
 			})
