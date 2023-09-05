@@ -527,21 +527,19 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 }
 
 func (c *MigrationController) processMigrationPhase(migration, migrationCopy *virtv1.VirtualMachineInstanceMigration, pod, attachmentPod *k8sv1.Pod, podExists, attachmentPodExists bool, conditionManager *controller.VirtualMachineInstanceMigrationConditionManager, vmiConditionManager *controller.VirtualMachineInstanceConditionManager, vmi *virtv1.VirtualMachineInstance, syncError error) (*virtv1.VirtualMachineInstanceMigration, error) {
-	newMigrationCopy := migrationCopy.DeepCopy()
-
 	switch migration.Status.Phase {
 	case virtv1.MigrationPhaseUnset:
 		canMigrate, err := c.canMigrateVMI(migration, vmi)
 		if err != nil {
-			return newMigrationCopy, err
+			return migrationCopy, err
 		}
 
 		if canMigrate {
-			newMigrationCopy.Status.Phase = virtv1.MigrationPending
+			migrationCopy.Status.Phase = virtv1.MigrationPending
 		} else {
 			// can not migrate because there is an active migration already
 			// in progress for this VMI.
-			newMigrationCopy.Status.Phase = virtv1.MigrationFailed
+			migrationCopy.Status.Phase = virtv1.MigrationFailed
 			c.recorder.Eventf(migration, k8sv1.EventTypeWarning, FailedMigrationReason, "VMI is not eligible for migration because another migration job is in progress.")
 			log.Log.Object(migration).Error("Migration object ont eligible for migration because another job is in progress")
 		}
@@ -549,10 +547,10 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 		if podExists {
 			if controller.VMIHasHotplugVolumes(vmi) {
 				if attachmentPodExists {
-					newMigrationCopy.Status.Phase = virtv1.MigrationScheduling
+					migrationCopy.Status.Phase = virtv1.MigrationScheduling
 				}
 			} else {
-				newMigrationCopy.Status.Phase = virtv1.MigrationScheduling
+				migrationCopy.Status.Phase = virtv1.MigrationScheduling
 			}
 		} else if syncError != nil && strings.Contains(syncError.Error(), "exceeded quota") && !conditionManager.HasCondition(migration, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota) {
 			condition := virtv1.VirtualMachineInstanceMigrationCondition{
@@ -560,35 +558,35 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 				Status:        k8sv1.ConditionTrue,
 				LastProbeTime: v1.Now(),
 			}
-			newMigrationCopy.Status.Conditions = append(newMigrationCopy.Status.Conditions, condition)
+			migrationCopy.Status.Conditions = append(migrationCopy.Status.Conditions, condition)
 		}
 	case virtv1.MigrationScheduling:
-		if conditionManager.HasCondition(newMigrationCopy, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota) {
-			conditionManager.RemoveCondition(newMigrationCopy, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota)
+		if conditionManager.HasCondition(migrationCopy, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota) {
+			conditionManager.RemoveCondition(migrationCopy, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota)
 		}
 		if isPodReady(pod) {
 			if controller.VMIHasHotplugVolumes(vmi) {
 				if attachmentPodExists && isPodReady(attachmentPod) {
 					log.Log.Object(migration).Infof("Attachment pod %s for vmi %s/%s is ready", attachmentPod.Name, vmi.Namespace, vmi.Name)
-					newMigrationCopy.Status.Phase = virtv1.MigrationScheduled
+					migrationCopy.Status.Phase = virtv1.MigrationScheduled
 				}
 			} else {
-				newMigrationCopy.Status.Phase = virtv1.MigrationScheduled
+				migrationCopy.Status.Phase = virtv1.MigrationScheduled
 			}
 		}
 	case virtv1.MigrationScheduled:
 		if vmi.Status.MigrationState != nil &&
 			vmi.Status.MigrationState.MigrationUID == migration.UID &&
 			vmi.Status.MigrationState.TargetNode != "" {
-			newMigrationCopy.Status.Phase = virtv1.MigrationPreparingTarget
+			migrationCopy.Status.Phase = virtv1.MigrationPreparingTarget
 		}
 	case virtv1.MigrationPreparingTarget:
 		if vmi.Status.MigrationState.TargetNode != "" && vmi.Status.MigrationState.TargetNodeAddress != "" {
-			newMigrationCopy.Status.Phase = virtv1.MigrationTargetReady
+			migrationCopy.Status.Phase = virtv1.MigrationTargetReady
 		}
 	case virtv1.MigrationTargetReady:
 		if vmi.Status.MigrationState.StartTimestamp != nil {
-			newMigrationCopy.Status.Phase = virtv1.MigrationRunning
+			migrationCopy.Status.Phase = virtv1.MigrationRunning
 		}
 	case virtv1.MigrationRunning:
 		_, exists := pod.Annotations[virtv1.MigrationTargetReadyTimestamp]
@@ -600,18 +598,18 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 
 			_, err := c.clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.JSONPatchType, []byte(patchOps), v1.PatchOptions{})
 			if err != nil {
-				return newMigrationCopy, err
+				return migrationCopy, err
 			}
 		}
 
 		if vmi.Status.MigrationState.Completed &&
 			!vmiConditionManager.HasCondition(vmi, virtv1.VirtualMachineInstanceVCPUChange) {
-			newMigrationCopy.Status.Phase = virtv1.MigrationSucceeded
+			migrationCopy.Status.Phase = virtv1.MigrationSucceeded
 			c.recorder.Eventf(migration, k8sv1.EventTypeNormal, SuccessfulMigrationReason, "Source node reported migration succeeded")
 			log.Log.Object(migration).Infof("VMI reported migration succeeded.")
 		}
 	}
-	return newMigrationCopy, nil
+	return migrationCopy, nil
 }
 
 func setTargetPodSELinuxLevel(pod *k8sv1.Pod, vmiSeContext string) error {
@@ -1263,9 +1261,13 @@ func (c *MigrationController) sync(key string, migration *virtv1.VirtualMachineI
 			}
 
 			// patch VMI annotations and set RuntimeUser in preparation for target pod creation
-			vmi, err = c.setupVMIRuntimeUser(vmi)
-			if err != nil {
-				return err
+			patches := c.setupVMIRuntimeUser(vmi)
+
+			if len(patches) != 0 {
+				vmi, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, controller.GeneratePatchBytes(patches), &v1.PatchOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to set VMI RuntimeUser: %v", err)
+				}
 			}
 
 			return c.handleTargetPodCreation(key, migration, vmi, sourcePod)
@@ -1324,9 +1326,8 @@ func (c *MigrationController) sync(key string, migration *virtv1.VirtualMachineI
 	return nil
 }
 
-func (c *MigrationController) setupVMIRuntimeUser(vmi *virtv1.VirtualMachineInstance) (*virtv1.VirtualMachineInstance, error) {
+func (c *MigrationController) setupVMIRuntimeUser(vmi *virtv1.VirtualMachineInstance) []string {
 	var patches []string
-	var err error
 
 	if !c.clusterConfig.RootEnabled() {
 		// The cluster is configured for non-root VMs, ensure the VMI is non-root.
@@ -1354,14 +1355,8 @@ func (c *MigrationController) setupVMIRuntimeUser(vmi *virtv1.VirtualMachineInst
 			}
 		}
 	}
-	if len(patches) != 0 {
-		vmi, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, controller.GeneratePatchBytes(patches), &v1.PatchOptions{})
-		if err != nil {
-			return vmi, fmt.Errorf("failed to set VMI RuntimeUser: %v", err)
-		}
-	}
 
-	return vmi, nil
+	return patches
 }
 
 func (c *MigrationController) listMatchingTargetPods(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance) ([]*k8sv1.Pod, error) {
