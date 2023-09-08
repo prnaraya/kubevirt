@@ -1566,7 +1566,7 @@ func getGracePeriodFromStopRequest(vm *virtv1.VirtualMachine) *int64 {
 	}
 
 	stateChange := vm.Status.StateChangeRequests[0]
-	if gracePeriodData, ok := stateChange.Data["grace-period"]; ok {
+	if gracePeriodData, ok := stateChange.Data[virtv1.StopRequestGracePeriodKey]; ok {
 		gracePeriod, _ := strconv.ParseInt(gracePeriodData, 10, 64)
 		return &gracePeriod
 	}

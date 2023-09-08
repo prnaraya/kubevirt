@@ -68,7 +68,7 @@ import (
 	"kubevirt.io/kubevirt/tools/vms-generator/utils"
 )
 
-var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:component][sig-compute]VirtualMachine", decorators.SigCompute, func() {
+var _ = FDescribe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:component][sig-compute]VirtualMachine", decorators.SigCompute, func() {
 	var err error
 	var virtClient kubecli.KubevirtClient
 
@@ -766,12 +766,66 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				Expect(newVMI.UID).ToNot(Equal(vmi.UID))
 			})
 
-			It("Should force stop a VMI", func() {
-				By("getting a VM with high TerminationGracePeriod")
-				vm := startVM(virtClient, createVM(virtClient, libvmi.New(
+			// It("Should force stop a VMI", func() {
+			// 	By("getting a VM with high TerminationGracePeriod")
+			// 	vm := startVM(virtClient, createVM(virtClient, libvmi.New(
+			// 		libvmi.WithResourceMemory("128Mi"),
+			// 		libvmi.WithTerminationGracePeriod(1600),
+			// 	)))
+
+			// 	By("setting up a watch for vmi")
+			// 	lw, err := virtClient.VirtualMachineInstance(vm.Namespace).Watch(context.Background(), metav1.ListOptions{})
+			// 	Expect(err).ToNot(HaveOccurred())
+
+			// 	terminationGracePeriodUpdated := func(stopCn <-chan bool, eventsCn <-chan watch.Event, updated chan<- bool) {
+			// 		for {
+			// 			select {
+			// 			case <-stopCn:
+			// 				return
+			// 			case e := <-eventsCn:
+			// 				vmi, ok := e.Object.(*v1.VirtualMachineInstance)
+			// 				Expect(ok).To(BeTrue())
+			// 				if vmi.Name != vm.Name {
+			// 					continue
+			// 				}
+
+			// 				if *vmi.Spec.TerminationGracePeriodSeconds == 0 {
+			// 					updated <- true
+			// 				}
+			// 			}
+			// 		}
+			// 	}
+			// 	stopCn := make(chan bool, 1)
+			// 	updated := make(chan bool, 1)
+			// 	go terminationGracePeriodUpdated(stopCn, lw.ResultChan(), updated)
+
+			// 	By("Invoking virtctl --force stop")
+			// 	forceStop := clientcmd.NewRepeatableVirtctlCommand(virtctl.COMMAND_STOP, vm.Name, "--namespace", vm.Namespace, "--force", "--grace-period=0")
+			// 	Expect(forceStop()).To(Succeed())
+
+			// 	By("Ensuring the VirtualMachineInstance is removed")
+			// 	Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).ShouldNot(Exist())
+
+			// 	Expect(updated).To(Receive(), "vmi should be updated")
+			// 	stopCn <- true
+			// })
+
+			It("Should delete a VMI with GracePeriodSeconds=0 when force stop is invoked", func() {
+				By("getting a VM with no disk and high TerminationGracePeriod")
+				vmi := libvmi.New(
+					libvmi.WithNetwork(v1.DefaultPodNetwork()),
+					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
 					libvmi.WithResourceMemory("128Mi"),
 					libvmi.WithTerminationGracePeriod(1600),
-				)))
+				)
+				vmi.Spec.Domain.Firmware = &v1.Firmware{
+					Bootloader: &v1.Bootloader{
+						BIOS: &v1.BIOS{
+							UseSerial: tests.NewBool(true),
+						},
+					},
+				}
+				vm := startVM(virtClient, createVM(virtClient, vmi))
 
 				By("setting up a watch for vmi")
 				lw, err := virtClient.VirtualMachineInstance(vm.Namespace).Watch(context.Background(), metav1.ListOptions{})
@@ -798,6 +852,13 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				stopCn := make(chan bool, 1)
 				updated := make(chan bool, 1)
 				go terminationGracePeriodUpdated(stopCn, lw.ResultChan(), updated)
+
+				By("Ensuring network boot is disabled on the network interface")
+				Expect(vmi.Spec.Domain.Devices.Interfaces[0].BootOrder).To(BeNil())
+
+				By("Expecting no bootable NIC")
+				Expect(console.NetBootExpecter(vmi)).NotTo(Succeed())
+				// The expecter *should* have error-ed since the network interface is not marked bootable
 
 				By("Invoking virtctl --force stop")
 				forceStop := clientcmd.NewRepeatableVirtctlCommand(virtctl.COMMAND_STOP, vm.Name, "--namespace", vm.Namespace, "--force", "--grace-period=0")

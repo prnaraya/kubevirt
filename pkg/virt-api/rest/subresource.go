@@ -289,9 +289,9 @@ func getUpdateTerminatingSecondsGracePeriod(gracePeriod int64) string {
 }
 
 func (app *SubresourceAPIApp) patchVMStatusStopped(vmi *v1.VirtualMachineInstance, vm *v1.VirtualMachine, response *restful.Response, bodyStruct *v1.StopOptions) (error, error) {
-	stopChangeRequestData := make(map[string](string))
+	stopChangeRequestData := make(map[string]string)
 	if bodyStruct.GracePeriod != nil {
-		stopChangeRequestData["grace-period"] = fmt.Sprintf("%d", *bodyStruct.GracePeriod)
+		stopChangeRequestData[v1.StopRequestGracePeriodKey] = fmt.Sprintf("%d", *bodyStruct.GracePeriod)
 	}
 
 	bodyString, err := getChangeRequestJson(vm,
@@ -380,6 +380,8 @@ func (app *SubresourceAPIApp) RestartVMRequestHandler(request *restful.Request, 
 			return
 		}
 	}
+
+	stopChangeRequestData := make(map[string]string)
 	if bodyStruct.GracePeriodSeconds != nil {
 		if *bodyStruct.GracePeriodSeconds > 0 {
 			writeError(errors.NewBadRequest(fmt.Sprintf("For force restart, only gracePeriod=0 is supported for now")), response)
@@ -388,6 +390,7 @@ func (app *SubresourceAPIApp) RestartVMRequestHandler(request *restful.Request, 
 			writeError(errors.NewBadRequest(fmt.Sprintf("gracePeriod has to be greater or equal to 0")), response)
 			return
 		}
+		stopChangeRequestData[v1.StopRequestGracePeriodKey] = fmt.Sprintf("%d", *bodyStruct.GracePeriodSeconds)
 	}
 
 	vm, statusErr := app.fetchVirtualMachine(name, namespace)
@@ -414,11 +417,6 @@ func (app *SubresourceAPIApp) RestartVMRequestHandler(request *restful.Request, 
 		}
 		writeError(errors.NewConflict(v1.Resource("virtualmachine"), name, fmt.Errorf("VM is not running: %v", v1.RunStrategyHalted)), response)
 		return
-	}
-
-	stopChangeRequestData := make(map[string](string))
-	if bodyStruct.GracePeriodSeconds != nil {
-		stopChangeRequestData["grace-period"] = fmt.Sprintf("%d", *bodyStruct.GracePeriodSeconds)
 	}
 
 	bodyString, err := getChangeRequestJson(vm,
@@ -660,7 +658,6 @@ func (app *SubresourceAPIApp) StopVMRequestHandler(request *restful.Request, res
 	var oldGracePeriodSeconds int64
 	patchType := types.MergePatchType
 	var patchErr error
-
 	if hasVMI && !vmi.IsFinal() && bodyStruct.GracePeriod != nil {
 		// used for stopping a VM with RunStrategyHalted
 		if vmi.Spec.TerminationGracePeriodSeconds != nil {

@@ -2054,6 +2054,7 @@ type UnpauseOptions struct {
 const (
 	StartRequestDataPausedKey  string = "paused"
 	StartRequestDataPausedTrue string = "true"
+	StopRequestGracePeriodKey  string = "grace-period"
 )
 
 // StopOptions may be provided when deleting an API object.

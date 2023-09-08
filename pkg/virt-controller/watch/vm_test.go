@@ -2006,6 +2006,39 @@ var _ = Describe("VirtualMachine", func() {
 			testutils.ExpectEvent(recorder, SuccessfulDeleteVirtualMachineReason)
 		})
 
+		Context("VM with stop request with grace-period", func() {
+			It("should delete VirtualMachineInstance with specified grace-period", func() {
+				forceStopGracePeriod := int64(0)
+				vm, vmi := DefaultVirtualMachine(true)
+				stopRequestData := make(map[string]string)
+				stopRequestData[virtv1.StopRequestGracePeriodKey] = "0"
+				vm.Status.StateChangeRequests = []virtv1.VirtualMachineStateChangeRequest{
+					virtv1.VirtualMachineStateChangeRequest{
+						Action: virtv1.StopRequest,
+						Data:   stopRequestData,
+						UID:    &vmi.UID,
+					},
+				}
+
+				addVirtualMachine(vm)
+				vmiFeeder.Add(vmi)
+
+				vmiInterface.EXPECT().Delete(context.Background(), gomock.Any(), gomock.Any()).DoAndReturn(
+					func(ctx context.Context, name string, opts *metav1.DeleteOptions) (interface{}, interface{}) {
+						//check that dryRun option has been propagated to patch request
+						Expect(opts.GracePeriodSeconds).To(BeEquivalentTo(&forceStopGracePeriod))
+						return &vm, nil
+					})
+
+				vmInterface.EXPECT().UpdateStatus(context.Background(), gomock.Any()).Times(1).Return(vm, nil)
+
+				controller.Execute()
+
+				testutils.ExpectEvent(recorder, SuccessfulDeleteVirtualMachineReason)
+			})
+
+		})
+
 		It("should add controller finalizer if VirtualMachine does not have it", func() {
 			vm, _ := DefaultVirtualMachine(false)
 			vm.Finalizers = nil

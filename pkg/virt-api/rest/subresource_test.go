@@ -1625,7 +1625,6 @@ var _ = Describe("VirtualMachineInstance Subresources", func() {
 						return vm, nil
 					})
 			}
-
 			if !shouldFail {
 				vmClient.EXPECT().PatchStatus(context.Background(), vm.Name, types.JSONPatchType, gomock.Any(), &k8smetav1.PatchOptions{}).Return(vm, nil)
 			}
