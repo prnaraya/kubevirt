@@ -1496,6 +1496,72 @@ status:
 			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
 		})
 
+		It("should force delete a stopped VM with high TerminationGracePeriod", func() {
+			By("getting a VM with a high TerminationGracePeriod")
+			vmi := libvmi.New(
+				libvmi.WithResourceMemory("128Mi"),
+				libvmi.WithTerminationGracePeriod(1600),
+			)
+			vm := tests.NewRandomVirtualMachine(vmi, false)
+			vm.Namespace = testsuite.GetTestNamespace(vm)
+
+			vmJson, err := tests.GenerateVMJson(vm, workDir)
+			Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
+
+			By("Creating VM using k8s client binary")
+			_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Deleting VM using k8s client binary with grace-period")
+			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force")
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying the VM gets deleted")
+			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
+
+			By("Verifying pod gets deleted")
+			expectedPodName := getExpectedPodName(vm)
+			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
+		})
+
+		It("should force delete a running VM with high TerminationGracePeriod", func() {
+			By("getting a VM with a high TerminationGracePeriod")
+			vmi := libvmi.New(
+				libvmi.WithResourceMemory("128Mi"),
+				libvmi.WithTerminationGracePeriod(1600),
+			)
+			vm := tests.NewRandomVirtualMachine(vmi, true)
+			vm.Namespace = testsuite.GetTestNamespace(vm)
+
+			vmJson, err := tests.GenerateVMJson(vm, workDir)
+			Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
+
+			By("Creating VM using k8s client binary")
+			_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Waiting for VMI to start")
+			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 120*time.Second, 1*time.Second).Should(BeRunning())
+
+			By("Checking that VM is running")
+			stdout, _, err := clientcmd.RunCommand(k8sClient, "describe", "vmis", vm.GetName())
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
+
+			By("Sending a second delete VM request using k8s client binary with grace-period")
+			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force", "--wait=false")
+			Expect(err).ToNot(HaveOccurred())
+			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 1*time.Second).Should(haveDeletionGracePeriod())
+
+			By("Verifying the VM gets deleted")
+			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
+
+			By("Verifying pod gets deleted")
+			expectedPodName := getExpectedPodName(vm)
+			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
+		})
+
 		Context("should not change anything if dry-run option is passed", func() {
 			It("[test_id:7530]in start command", func() {
 				vm, vmJson := createVMAndGenerateJson(false)
@@ -2021,6 +2087,14 @@ func haveStateChangeRequests() gomegatypes.GomegaMatcher {
 	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 			"StateChangeRequests": Not(BeEmpty()),
+		}),
+	}))
+}
+
+func haveDeletionGracePeriod() gomegatypes.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"ObjectMeta": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"DeletionGracePeriodSeconds": HaveValue(BeNumerically("==", 0)),
 		}),
 	}))
 }
