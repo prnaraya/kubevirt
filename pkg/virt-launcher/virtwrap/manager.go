@@ -1671,6 +1671,7 @@ func (l *LibvirtDomainManager) SignalShutdownVMI(vmi *v1.VirtualMachineInstance)
 			return err
 		}
 	}
+
 	defer dom.Free()
 
 	domState, _, err := dom.GetState()
@@ -1694,6 +1695,12 @@ func (l *LibvirtDomainManager) SignalShutdownVMI(vmi *v1.VirtualMachineInstance)
 			}
 		})
 		log.Log.V(4).Infof("Graceful period set in metadata: %s", l.metadataCache.GracePeriod.String())
+	}
+
+	// if VMI has DeletionGracePeriodSeconds = 0, it means a force shutdown has been requested
+	// we honor this grace period by bypassing the graceful shutdown and killing the VMI.
+	if vmi.DeletionGracePeriodSeconds != nil && *vmi.DeletionGracePeriodSeconds == 0 {
+		return l.KillVMI(vmi)
 	}
 
 	return nil

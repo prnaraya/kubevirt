@@ -1436,6 +1436,22 @@ var _ = Describe("Manager", func() {
 			Expect(gracePeriod.DeletionTimestamp).NotTo(BeNil())
 		})
 	})
+	Context("test shutdown when VMI DeletionGracePeriodSeconds=0", func() {
+		It("Should kill VMI if VMI DeletionGracePeriodSeconds=0", func() {
+			mockDomain.EXPECT().GetState().AnyTimes().Return(libvirt.DOMAIN_RUNNING, 1, nil)
+			mockConn.EXPECT().LookupDomainByName(testDomainName).AnyTimes().DoAndReturn(mockDomainWithFreeExpectation)
+			mockDomain.EXPECT().ShutdownFlags(libvirt.DOMAIN_SHUTDOWN_ACPI_POWER_BTN).Return(nil)
+			mockDomain.EXPECT().DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL).Return(nil)
+
+			manager, _ := NewLibvirtDomainManager(mockConn, testVirtShareDir, testEphemeralDiskDir, nil, "/usr/share/OVMF", ephemeralDiskCreatorMock, metadataCache)
+
+			gracePeriodZero := int64(0)
+			vmi := newVMI(testNamespace, testVmName)
+			vmi.DeletionGracePeriodSeconds = &gracePeriodZero
+			Expect(manager.SignalShutdownVMI(vmi)).To(Succeed())
+
+		})
+	})
 	Context("test migration monitor", func() {
 		It("migration should be canceled if it's not progressing", func() {
 			migrationErrorChan := make(chan error)
