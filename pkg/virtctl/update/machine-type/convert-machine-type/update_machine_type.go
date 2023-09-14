@@ -34,15 +34,20 @@ func matchMachineType(machineType string) (bool, error) {
 	return true, nil
 }
 
-func isMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
-	return vm.Spec.Template.Spec.Domain.Machine == nil
-}
-
 func (c *JobController) patchMachineType(vm *k6tv1.VirtualMachine) error {
+	// removing the machine type field from the VM spec reverts it to
+	// the default machine type of the VM's arch
 	updateMachineType := `[{"op": "remove", "path": "/spec/template/spec/domain/machine"}]`
 
 	_, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(updateMachineType), &k8sv1.PatchOptions{})
 	return err
+}
+
+func isMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
+	if vm.Spec.Template.Spec.Domain.Machine != nil && vm.Spec.Template.Spec.Domain.Machine.Type != "q35" {
+		return false
+	}
+	return true
 }
 
 func (c *JobController) UpdateMachineTypes() error {
@@ -58,12 +63,13 @@ func (c *JobController) UpdateMachineTypes() error {
 		return err
 	}
 
+	fmt.Printf("VMList length: %d\n", len(vmList.Items))
 	for _, vm := range vmList.Items {
 
 		if *vm.Spec.Running {
 			vmi, err := c.VirtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8sv1.GetOptions{})
 			if err != nil {
-				fmt.Print(err)
+				fmt.Println(err)
 				continue
 			}
 
@@ -76,7 +82,7 @@ func (c *JobController) UpdateMachineTypes() error {
 			matchMachineType, err := path.Match(MachineTypeGlob, vmi.Status.Machine.Type)
 			if !matchMachineType {
 				if err != nil {
-					fmt.Print(err)
+					fmt.Println(err)
 				}
 				continue
 			}
@@ -88,7 +94,7 @@ func (c *JobController) UpdateMachineTypes() error {
 			if RestartNow {
 				err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
 				if err != nil {
-					fmt.Print(err)
+					fmt.Println(err)
 				}
 				continue
 			}
@@ -97,7 +103,7 @@ func (c *JobController) UpdateMachineTypes() error {
 			// they must manually be restarted
 			err = c.addWarningLabel(&vm)
 			if err != nil {
-				fmt.Print(err)
+				fmt.Println(err)
 				continue
 			}
 		} else {
@@ -106,7 +112,7 @@ func (c *JobController) UpdateMachineTypes() error {
 
 			if !matchMachineType {
 				if err != nil {
-					fmt.Print(err)
+					fmt.Println(err)
 				}
 				continue
 			}

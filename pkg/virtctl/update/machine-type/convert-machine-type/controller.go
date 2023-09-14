@@ -62,17 +62,12 @@ func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 		return err
 	}
 
-	numVmisPendingUpdate := c.numVmisPendingUpdate()
-	fmt.Printf("Num vmis pending update: %d", numVmisPendingUpdate)
-	if numVmisPendingUpdate == 0 {
-		close(c.ExitJob)
-	}
 	return nil
 }
 
 func (c *JobController) numVmisPendingUpdate() int {
 	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{
-		LabelSelector: `restart-vm-required=""`,
+		LabelSelector: "restart-vm-required=",
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -84,12 +79,13 @@ func (c *JobController) numVmisPendingUpdate() int {
 
 func (c *JobController) run(stopCh <-chan struct{}) {
 	defer c.Queue.ShutDown()
+	informerStopCh := make(chan struct{})
 
-	fmt.Print("Starting job controller")
-	go c.VmiInformer.Run(stopCh)
+	fmt.Println("Starting job controller")
+	go c.VmiInformer.Run(informerStopCh)
 
-	if !cache.WaitForCacheSync(stopCh, c.VmiInformer.HasSynced) {
-		fmt.Print("Timed out waiting for caches to sync")
+	if !cache.WaitForCacheSync(informerStopCh, c.VmiInformer.HasSynced) {
+		fmt.Println("Timed out waiting for caches to sync")
 		return
 	}
 
@@ -143,6 +139,7 @@ func (c *JobController) handleDeletedVmi(namespace, name string) {
 
 	// check if VM has restart-vm-required label
 	if _, ok := vm.Labels["restart-vm-required"]; !ok {
+		fmt.Println("vm does not have restart label")
 		return
 	}
 
@@ -151,11 +148,12 @@ func (c *JobController) handleDeletedVmi(namespace, name string) {
 	// has been updated
 	updated := isMachineTypeUpdated(vm)
 	if err != nil {
-		fmt.Print(err)
+		fmt.Println(err)
 		return
 	}
 
 	if !updated {
+		fmt.Println("vm not updated")
 		return
 	}
 
@@ -163,6 +161,12 @@ func (c *JobController) handleDeletedVmi(namespace, name string) {
 	err = c.removeWarningLabel(vm)
 	if err != nil {
 		fmt.Println(err)
+	}
+
+	numVmisPendingUpdate := c.numVmisPendingUpdate()
+	fmt.Printf("checking num vmis after vmi is deleted: %d\n", numVmisPendingUpdate)
+	if numVmisPendingUpdate <= 0 {
+		close(c.ExitJob)
 	}
 }
 
