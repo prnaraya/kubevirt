@@ -860,6 +860,7 @@ func (c *VMController) handleVolumeRequests(vm *virtv1.VirtualMachine, vmi *virt
 }
 
 func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) syncError {
+	var stopGracePeriod *int64
 	runStrategy, err := vm.RunStrategy()
 	if err != nil {
 		return &syncErrorImpl{fmt.Errorf(fetchingRunStrategyErrFmt, err), FailedCreateReason}
@@ -876,19 +877,26 @@ func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualM
 		// For this RunStrategy, a VMI should always be running. If a StateChangeRequest
 		// asks to stop a VMI, a new one must be immediately re-started.
 		if vmi != nil {
-			var forceRestart bool
-			if forceRestart = hasStopRequestForVMI(vm, vmi); forceRestart {
-				log.Log.Object(vm).Infof("processing forced restart request for VMI with phase %s and VM runStrategy: %s", vmi.Status.Phase, runStrategy)
+			var stopRequest bool
+			if stopRequest = hasStopRequestForVMI(vm, vmi); stopRequest {
+				stopGracePeriod = getGracePeriodFromStopRequest(vm)
+				log.Log.Object(vm).Infof("processing restart request for VMI with phase %s and VM runStrategy: %s", vmi.Status.Phase, runStrategy)
+
+				// if grace period = 0, a force restart was requested. To honor this, we need to delete the VMI's finalizers before
+				// we can delete the VMI
+				if *stopGracePeriod == 0 {
+					vmi.SetFinalizers([]string{})
+				}
 			}
 
-			if forceRestart || vmi.IsFinal() {
+			if stopRequest || vmi.IsFinal() {
 				log.Log.Object(vm).Infof("%s with VMI in phase %s and VM runStrategy: %s", stoppingVmMsg, vmi.Status.Phase, runStrategy)
 
 				// The VirtualMachineInstance can fail or be finished. The job of this controller
 				// is keep the VirtualMachineInstance running, therefore it restarts it.
 				// restarting VirtualMachineInstance by stopping it and letting it start in next step
 				log.Log.Object(vm).V(4).Info(stoppingVmMsg)
-				err := c.stopVMI(vm, vmi)
+				err := c.stopVMI(vm, vmi, stopGracePeriod)
 				if err != nil {
 					log.Log.Object(vm).Errorf(failureDeletingVmiErrFormat, err)
 					return &syncErrorImpl{fmt.Errorf(failureDeletingVmiErrFormat, err), VMIFailedDeleteReason}
@@ -917,17 +925,23 @@ func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualM
 		// For this RunStrategy, a VMI should only be restarted if it failed.
 		// If a VMI enters the Succeeded phase, it should not be restarted.
 		if vmi != nil {
-			var forceStop bool
-			if forceStop = hasStopRequestForVMI(vm, vmi); forceStop {
+			var stopRequest bool
+			if stopRequest = hasStopRequestForVMI(vm, vmi); stopRequest {
+				stopGracePeriod = getGracePeriodFromStopRequest(vm)
 				log.Log.Object(vm).Infof("processing stop request for VMI with phase %s and VM runStrategy: %s", vmi.Status.Phase, runStrategy)
 
+				// if grace period = 0, a force stop was requested. To honor this, we need to delete the VMI's finalizers before
+				// we can delete the VMI
+				if *stopGracePeriod == 0 {
+					vmi.SetFinalizers([]string{})
+				}
 			}
 
-			if forceStop || vmi.Status.Phase == virtv1.Failed {
+			if stopRequest || vmi.Status.Phase == virtv1.Failed {
 				// For RerunOnFailure, this controller should only restart the VirtualMachineInstance
 				// if it failed.
 				log.Log.Object(vm).Infof("%s with VMI in phase %s and VM runStrategy: %s", stoppingVmMsg, vmi.Status.Phase, runStrategy)
-				err := c.stopVMI(vm, vmi)
+				err := c.stopVMI(vm, vmi, stopGracePeriod)
 				if err != nil {
 					log.Log.Object(vm).Errorf(failureDeletingVmiErrFormat, err)
 					return &syncErrorImpl{fmt.Errorf(failureDeletingVmiErrFormat, err), VMIFailedDeleteReason}
@@ -957,9 +971,17 @@ func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualM
 		if vmi != nil {
 			log.Log.Object(vm).V(4).Info("VMI exists")
 
-			if forceStop := hasStopRequestForVMI(vm, vmi); forceStop {
+			if stopRequest := hasStopRequestForVMI(vm, vmi); stopRequest {
+				stopGracePeriod = getGracePeriodFromStopRequest(vm)
 				log.Log.Object(vm).Infof("%s with VMI in phase %s due to stop request and VM runStrategy: %s", vmi.Status.Phase, stoppingVmMsg, runStrategy)
-				err := c.stopVMI(vm, vmi)
+
+				// if grace period = 0, a force stop was requested. To honor this, we need to delete the VMI's finalizers before
+				// we can delete the VMI
+				if *stopGracePeriod == 0 {
+					vmi.SetFinalizers([]string{})
+				}
+
+				err := c.stopVMI(vm, vmi, stopGracePeriod)
 				if err != nil {
 					log.Log.Object(vm).Errorf(failureDeletingVmiErrFormat, err)
 					return &syncErrorImpl{fmt.Errorf(failureDeletingVmiErrFormat, err), VMIFailedDeleteReason}
@@ -999,7 +1021,21 @@ func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualM
 			return nil
 		}
 		log.Log.Object(vm).Infof("%s with VMI in phase %s due to runStrategy: %s", stoppingVmMsg, vmi.Status.Phase, runStrategy)
-		if err := c.stopVMI(vm, vmi); err != nil {
+
+		// if force stop is called on a halted VM, we need to update the grace
+		// period force stop will only be called if the new grace period is less
+		// than the DeletionGracePeriodSeconds
+		if stopRequest := hasStopRequestForVMI(vm, vmi); stopRequest {
+			stopGracePeriod = getGracePeriodFromStopRequest(vm)
+			log.Log.Object(vm).Infof("%s with VMI in phase %s due to stop request and VM runStrategy: %s", vmi.Status.Phase, stoppingVmMsg, runStrategy)
+
+			// if grace period = 0, a force stop was requested. To honor this, we need to delete the VMI's finalizers before
+			// we can delete the VMI
+			if *stopGracePeriod == 0 {
+				vmi.SetFinalizers([]string{})
+			}
+		}
+		if err := c.stopVMI(vm, vmi, stopGracePeriod); err != nil {
 			return &syncErrorImpl{fmt.Errorf(failureDeletingVmiErrFormat, err), VMIFailedDeleteReason}
 		}
 		return nil
@@ -1406,7 +1442,7 @@ func syncStartFailureStatus(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 }
 
 // here is stop
-func (c *VMController) stopVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) error {
+func (c *VMController) stopVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance, gracePeriod *int64) error {
 	if vmi == nil || vmi.DeletionTimestamp != nil {
 		// nothing to do
 		return nil
@@ -1418,9 +1454,13 @@ func (c *VMController) stopVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMac
 		return nil
 	}
 
-	// stop it
 	c.expectations.ExpectDeletions(vmKey, []string{controller.VirtualMachineInstanceKey(vmi)})
-	err = c.clientset.VirtualMachineInstance(vm.ObjectMeta.Namespace).Delete(context.Background(), vmi.ObjectMeta.Name, &v1.DeleteOptions{})
+
+	deleteOpts := &v1.DeleteOptions{}
+	if gracePeriod != nil {
+		deleteOpts.GracePeriodSeconds = gracePeriod
+	}
+	err = c.clientset.VirtualMachineInstance(vm.ObjectMeta.Namespace).Delete(context.Background(), vmi.ObjectMeta.Name, deleteOpts)
 
 	// Don't log an error if it is already deleted
 	if err != nil {
@@ -1646,6 +1686,24 @@ func hasStopRequestForVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineI
 	return stateChange.Action == virtv1.StopRequest &&
 		stateChange.UID != nil &&
 		*stateChange.UID == vmi.UID
+}
+
+func getGracePeriodFromStopRequest(vm *virtv1.VirtualMachine) *int64 {
+	if len(vm.Status.StateChangeRequests) == 0 {
+		return nil
+	}
+
+	stateChange := vm.Status.StateChangeRequests[0]
+	if stateChange.Action != virtv1.StopRequest {
+		return nil
+	}
+
+	if gracePeriodData, ok := stateChange.Data[virtv1.StopRequestGracePeriodKey]; ok {
+		gracePeriod, _ := strconv.ParseInt(gracePeriodData, 10, 64)
+		return &gracePeriod
+	}
+
+	return nil
 }
 
 // no special meaning, randomly generated on my box.
@@ -2737,7 +2795,18 @@ func (c *VMController) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 				return vm, nil, err
 			}
 		} else {
-			err = c.stopVMI(vm, vmi)
+			var stopGracePeriod *int64
+			if stopRequest := hasStopRequestForVMI(vm, vmi); stopRequest {
+				stopGracePeriod = getGracePeriodFromStopRequest(vm)
+			}
+
+			// if grace period = 0, a force stop was requested. To honor this, we need to delete the VMI's finalizers before
+			// we can delete the VMI
+			if *stopGracePeriod == 0 {
+				vmi.SetFinalizers([]string{})
+			}
+
+			err = c.stopVMI(vm, vmi, stopGracePeriod)
 			if err != nil {
 				log.Log.Object(vm).Errorf(failureDeletingVmiErrFormat, err)
 				return vm, &syncErrorImpl{fmt.Errorf(failureDeletingVmiErrFormat, err), VMIFailedDeleteReason}, nil

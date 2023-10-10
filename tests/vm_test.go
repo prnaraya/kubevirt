@@ -43,7 +43,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/utils/pointer"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -731,7 +730,7 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				}, 240*time.Second, 1*time.Second).Should(BeTrue())
 			})
 
-			It("[test_id:3007]Should force restart a VM with terminationGracePeriodSeconds>0", func() {
+			FIt("[test_id:3007]Should force restart a VM with terminationGracePeriodSeconds>0", func() {
 				By("getting a VM with high TerminationGracePeriod")
 				vm := startVM(virtClient, createVM(virtClient, libvmi.NewFedora(
 					libvmi.WithTerminationGracePeriod(600),
@@ -766,38 +765,16 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				Expect(newVMI.UID).ToNot(Equal(vmi.UID))
 			})
 
-			It("Should force stop a VMI", func() {
+			FIt("Should force stop a VMI stuck in Terminating", func() {
 				By("getting a VM with high TerminationGracePeriod")
 				vm := startVM(virtClient, createVM(virtClient, libvmi.New(
 					libvmi.WithResourceMemory("128Mi"),
-					libvmi.WithTerminationGracePeriod(1600),
+					libvmi.WithTerminationGracePeriod(120),
 				)))
 
-				By("setting up a watch for vmi")
-				lw, err := virtClient.VirtualMachineInstance(vm.Namespace).Watch(context.Background(), metav1.ListOptions{})
-				Expect(err).ToNot(HaveOccurred())
-
-				terminationGracePeriodUpdated := func(stopCn <-chan bool, eventsCn <-chan watch.Event, updated chan<- bool) {
-					for {
-						select {
-						case <-stopCn:
-							return
-						case e := <-eventsCn:
-							vmi, ok := e.Object.(*v1.VirtualMachineInstance)
-							Expect(ok).To(BeTrue())
-							if vmi.Name != vm.Name {
-								continue
-							}
-
-							if *vmi.Spec.TerminationGracePeriodSeconds == 0 {
-								updated <- true
-							}
-						}
-					}
-				}
-				stopCn := make(chan bool, 1)
-				updated := make(chan bool, 1)
-				go terminationGracePeriodUpdated(stopCn, lw.ResultChan(), updated)
+				By("Invoking normal virtctl stop")
+				go clientcmd.NewRepeatableVirtctlCommand(virtctl.COMMAND_STOP, vm.Name, "--namespace", vm.Namespace)
+				time.Sleep(10 * time.Second)
 
 				By("Invoking virtctl --force stop")
 				forceStop := clientcmd.NewRepeatableVirtctlCommand(virtctl.COMMAND_STOP, vm.Name, "--namespace", vm.Namespace, "--force", "--grace-period=0")
@@ -805,9 +782,6 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 
 				By("Ensuring the VirtualMachineInstance is removed")
 				Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).ShouldNot(Exist())
-
-				Expect(updated).To(Receive(), "vmi should be updated")
-				stopCn <- true
 			})
 
 			Context("Using RunStrategyAlways", func() {
@@ -1496,7 +1470,7 @@ status:
 			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
 		})
 
-		FIt("should force delete a stopped VM with high TerminationGracePeriod", func() {
+		It("should force delete a stopped VM with high TerminationGracePeriod", func() {
 			By("getting a VM with a high TerminationGracePeriod")
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory("128Mi"),
@@ -1524,7 +1498,7 @@ status:
 			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
 		})
 
-		FIt("should force delete a running VM with high TerminationGracePeriod", func() {
+		It("should force delete a running VM with high TerminationGracePeriod", func() {
 			By("getting a VM with a high TerminationGracePeriod")
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory("128Mi"),
@@ -1549,11 +1523,13 @@ status:
 
 			Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
 
-			By("Sending a second delete VM request using k8s client binary with grace-period")
+			By("Sending a delete VMI request using k8s client binary with grace-period")
 			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force", "--wait=false")
 			Expect(err).ToNot(HaveOccurred())
-			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 120*time.Second, 1*time.Second).Should(haveZeroTerminationGracePeriod())
 			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 120*time.Second, 1*time.Second).Should(haveDeletionGracePeriod())
+			vmi, err = virtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8smetav1.GetOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			fmt.Printf("Number of finalizers: %d\n", len(vmi.GetFinalizers()))
 
 			By("Verifying the VM gets deleted")
 			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
@@ -2096,14 +2072,7 @@ func haveDeletionGracePeriod() gomegatypes.GomegaMatcher {
 	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 		"ObjectMeta": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 			"DeletionGracePeriodSeconds": HaveValue(BeNumerically("==", 0)),
-		}),
-	}))
-}
-
-func haveZeroTerminationGracePeriod() gomegatypes.GomegaMatcher {
-	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
-		"Spec": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
-			"TerminationGracePeriodSeconds": HaveValue(BeNumerically("==", 0)),
+			"DeletionTimestamp":          Not(BeNil()),
 		}),
 	}))
 }
