@@ -545,11 +545,7 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 		}
 	case virtv1.MigrationPending:
 		if podExists {
-			if controller.VMIHasHotplugVolumes(vmi) {
-				if attachmentPodExists {
-					migrationCopy.Status.Phase = virtv1.MigrationScheduling
-				}
-			} else {
+			if !controller.VMIHasHotplugVolumes(vmi) || attachmentPodExists {
 				migrationCopy.Status.Phase = virtv1.MigrationScheduling
 			}
 		} else if syncError != nil && strings.Contains(syncError.Error(), "exceeded quota") && !conditionManager.HasCondition(migration, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota) {
@@ -568,11 +564,11 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 			if controller.VMIHasHotplugVolumes(vmi) {
 				if attachmentPodExists && isPodReady(attachmentPod) {
 					log.Log.Object(migration).Infof("Attachment pod %s for vmi %s/%s is ready", attachmentPod.Name, vmi.Namespace, vmi.Name)
-					migrationCopy.Status.Phase = virtv1.MigrationScheduled
+				} else {
+					break
 				}
-			} else {
-				migrationCopy.Status.Phase = virtv1.MigrationScheduled
 			}
+			migrationCopy.Status.Phase = virtv1.MigrationScheduled
 		}
 	case virtv1.MigrationScheduled:
 		if vmi.Status.MigrationState != nil &&
