@@ -1500,7 +1500,7 @@ status:
 			By("getting a VM with a high TerminationGracePeriod")
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory("128Mi"),
-				libvmi.WithTerminationGracePeriod(1600),
+				libvmi.WithTerminationGracePeriod(240),
 			)
 			vm := tests.NewRandomVirtualMachine(vmi, false)
 			vm.Namespace = testsuite.GetTestNamespace(vm)
@@ -1528,7 +1528,7 @@ status:
 			By("getting a VM with a high TerminationGracePeriod")
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory("128Mi"),
-				libvmi.WithTerminationGracePeriod(1600),
+				libvmi.WithTerminationGracePeriod(240),
 			)
 			vm := tests.NewRandomVirtualMachine(vmi, true)
 			vm.Namespace = testsuite.GetTestNamespace(vm)
@@ -1549,15 +1549,15 @@ status:
 
 			Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
 
-			By("Sending a second delete VM request using k8s client binary with grace-period")
-			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force", "--wait=false")
+			By("Sending a force delete VM request using k8s client binary with grace-period")
+			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vmi", vm.GetName(), "--grace-period=0", "--force", "--wait=false")
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Ensuring grace period value has been passed to the VMI's DeletionGracePeriodSeconds")
 			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 60*time.Second, 1*time.Second).Should(haveDeletionGracePeriod())
 
-			By("Verifying the VM gets deleted")
-			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
+			By("Verifying the VMI gets deleted")
+			waitForResourceDeletion(k8sClient, "vmis", vm.GetName())
 
 			By("Verifying pod gets deleted")
 			expectedPodName := getExpectedPodName(vm)

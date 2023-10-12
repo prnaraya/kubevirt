@@ -1722,8 +1722,17 @@ func (l *LibvirtDomainManager) KillVMI(vmi *v1.VirtualMachineInstance) error {
 		return err
 	}
 
+	// if grace period is 0, a force stop was requested
+	// we should honor this request by using the default
+	// destroy flag rather than graceful
+	destroyFlags := libvirt.DOMAIN_DESTROY_GRACEFUL
+	l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
+		if gracePeriodMetadata.DeletionGracePeriodSeconds == 0 {
+			destroyFlags = libvirt.DOMAIN_DESTROY_DEFAULT
+		}
+	})
 	if domState == libvirt.DOMAIN_RUNNING || domState == libvirt.DOMAIN_PAUSED || domState == libvirt.DOMAIN_SHUTDOWN {
-		err = dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
+		err = dom.DestroyFlags(destroyFlags)
 		if err != nil {
 			if domainerrors.IsNotFound(err) {
 				return nil

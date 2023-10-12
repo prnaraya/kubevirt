@@ -353,6 +353,18 @@ func (l *Launcher) DeleteVirtualMachine(_ context.Context, request *cmdv1.VMIReq
 		return response, nil
 	}
 
+	// if *vmi.GetDeletionGracePeriodSeconds() == 0 {
+	// 	if err := l.domainManager.KillVMI(vmi); err != nil {
+	// 		log.Log.Object(vmi).Reason(err).Errorf("Failed to signal deletion for vmi")
+	// 		response.Success = false
+	// 		response.Message = getErrorMessage(err)
+	// 		return response, nil
+	// 	}
+
+	// 	log.Log.Object(vmi).Info("Signaled vmi force deletion")
+	// 	return response, nil
+	// }
+
 	if err := l.domainManager.DeleteVMI(vmi); err != nil {
 		log.Log.Object(vmi).Reason(err).Errorf("Failed to signal deletion for vmi")
 		response.Success = false
