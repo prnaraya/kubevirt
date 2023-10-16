@@ -1691,16 +1691,17 @@ func (l *LibvirtDomainManager) SignalShutdownVMI(vmi *v1.VirtualMachineInstance)
 		l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
 			if gracePeriodMetadata.DeletionTimestamp == nil {
 				now := metav1.Now()
-				gracePeriodMetadata.DeletionTimestamp = &now
+				gracePeriodMetadata.
+					DeletionTimestamp = &now
+			}
+
+			if vmi.GetDeletionGracePeriodSeconds() != nil {
+				l.metadataCache.GracePeriod.Set(
+					api.GracePeriodMetadata{DeletionGracePeriodSeconds: converter.GracePeriodSeconds(vmi)},
+				)
 			}
 		})
 		log.Log.V(4).Infof("Graceful period set in metadata: %s", l.metadataCache.GracePeriod.String())
-	}
-
-	// if VMI has DeletionGracePeriodSeconds = 0, it means a force shutdown has been requested
-	// we honor this grace period by bypassing the graceful shutdown and killing the VMI.
-	if vmi.DeletionGracePeriodSeconds != nil && *vmi.DeletionGracePeriodSeconds == 0 {
-		return l.KillVMI(vmi)
 	}
 
 	return nil
@@ -1729,8 +1730,14 @@ func (l *LibvirtDomainManager) KillVMI(vmi *v1.VirtualMachineInstance) error {
 		return err
 	}
 
+	destroyFlags := libvirt.DOMAIN_DESTROY_GRACEFUL
+	l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
+		if gracePeriodMetadata.DeletionGracePeriodSeconds == 0 {
+			destroyFlags = libvirt.DOMAIN_DESTROY_DEFAULT
+		}
+	})
 	if domState == libvirt.DOMAIN_RUNNING || domState == libvirt.DOMAIN_PAUSED || domState == libvirt.DOMAIN_SHUTDOWN {
-		err = dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
+		err = dom.DestroyFlags(destroyFlags)
 		if err != nil {
 			if domainerrors.IsNotFound(err) {
 				return nil
@@ -1758,6 +1765,19 @@ func (l *LibvirtDomainManager) DeleteVMI(vmi *v1.VirtualMachineInstance) error {
 			return err
 		}
 	}
+
+	// if there was a force delete requested and the grace period is 0,
+	// kill the VMI before freeing the domain
+	forceDelete := false
+	l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
+		if gracePeriodMetadata.DeletionGracePeriodSeconds == 0 {
+			forceDelete = true
+		}
+	})
+	if forceDelete {
+		return l.KillVMI(vmi)
+	}
+
 	defer dom.Free()
 
 	err = dom.UndefineFlags(libvirt.DOMAIN_UNDEFINE_KEEP_NVRAM)

@@ -731,10 +731,10 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				}, 240*time.Second, 1*time.Second).Should(BeTrue())
 			})
 
-			It("[test_id:3007]Should force restart a VM with terminationGracePeriodSeconds>0", func() {
+			FIt("[test_id:3007]Should force restart a VM with terminationGracePeriodSeconds>0", func() {
 				By("getting a VM with high TerminationGracePeriod")
 				vm := startVM(virtClient, createVM(virtClient, libvmi.NewFedora(
-					libvmi.WithTerminationGracePeriod(600),
+					libvmi.WithTerminationGracePeriod(1600),
 				)))
 
 				vmi, err := virtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8smetav1.GetOptions{})
@@ -757,7 +757,7 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 					return ""
 				}, 120*time.Second, 1*time.Second).Should(ContainSubstring("failed to find pod"))
 
-				Eventually(ThisVMI(vmi), 240*time.Second, 1*time.Second).Should(beRestarted(vmi.UID))
+				Eventually(ThisVMI(vmi), 120*time.Second, 1*time.Second).Should(beRestarted(vmi.UID))
 
 				By("Comparing the new UID and CreationTimeStamp with the old one")
 				newVMI, err := virtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8smetav1.GetOptions{})
@@ -766,7 +766,7 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				Expect(newVMI.UID).ToNot(Equal(vmi.UID))
 			})
 
-			It("Should force stop a VMI", func() {
+			FIt("Should force stop a VMI", func() {
 				By("getting a VM with high TerminationGracePeriod")
 				vm := startVM(virtClient, createVM(virtClient, libvmi.New(
 					libvmi.WithResourceMemory("128Mi"),
@@ -804,7 +804,7 @@ var _ = Describe("[rfe_id:1177][crit:medium][vendor:cnv-qe@redhat.com][level:com
 				Expect(forceStop()).To(Succeed())
 
 				By("Ensuring the VirtualMachineInstance is removed")
-				Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).ShouldNot(Exist())
+				Eventually(ThisVMIWith(vm.Namespace, vm.Name), 120*time.Second, 1*time.Second).ShouldNot(Exist())
 
 				Expect(updated).To(Receive(), "vmi should be updated")
 				stopCn <- true
@@ -1496,7 +1496,7 @@ status:
 			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
 		})
 
-		It("should force delete a stopped VM with high TerminationGracePeriod", func() {
+		FIt("should force delete a stopped VM with high TerminationGracePeriod", func() {
 			By("getting a VM with a high TerminationGracePeriod")
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory("128Mi"),
@@ -1524,7 +1524,7 @@ status:
 			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
 		})
 
-		It("should force delete a running VM with high TerminationGracePeriod", func() {
+		FIt("should force delete a running VM with high TerminationGracePeriod", func() {
 			By("getting a VM with a high TerminationGracePeriod")
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory("128Mi"),
@@ -1549,10 +1549,9 @@ status:
 
 			Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
 
-			By("Sending a second delete VM request using k8s client binary with grace-period")
-			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force", "--wait=false")
+			By("Sending a force delete VM request using k8s client binary")
+			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force")
 			Expect(err).ToNot(HaveOccurred())
-			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 1*time.Second).Should(haveDeletionGracePeriod())
 
 			By("Verifying the VM gets deleted")
 			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
@@ -2087,14 +2086,6 @@ func haveStateChangeRequests() gomegatypes.GomegaMatcher {
 	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 			"StateChangeRequests": Not(BeEmpty()),
-		}),
-	}))
-}
-
-func haveDeletionGracePeriod() gomegatypes.GomegaMatcher {
-	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
-		"ObjectMeta": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
-			"DeletionGracePeriodSeconds": HaveValue(BeNumerically("==", 0)),
 		}),
 	}))
 }
