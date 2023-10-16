@@ -568,8 +568,8 @@ var _ = Describe("Converter", func() {
 				Serial: "e4686d2c-6e8d-4335-b8fd-81bee22f4815",
 			}
 
-			gracePerod := int64(5)
-			vmi.Spec.TerminationGracePeriodSeconds = &gracePerod
+			gracePeriod := int64(5)
+			vmi.Spec.TerminationGracePeriodSeconds = &gracePeriod
 
 			vmi.ObjectMeta.UID = "f4686d2c-6e8d-4335-b8fd-81bee22f4814"
 		})
@@ -1329,6 +1329,23 @@ var _ = Describe("Converter", func() {
 			Entry("ErrorPolicy equal to enospace", kubevirtpointer.P(v1.DiskErrorPolicyEnospace), "enospace"),
 		)
 
+		Context("Should get correct DeletionGracePeriod", func() {
+			It("should return DeletionGracePeriodSeconds from VMI ObjectMeta if set", func() {
+				gracePeriod := int64(100)
+				v1.SetObjectDefaults_VirtualMachineInstance(vmi)
+				vmi.ObjectMeta.DeletionGracePeriodSeconds = &gracePeriod
+				Expect(GracePeriodSeconds(vmi)).To(BeNumerically("==", gracePeriod))
+			})
+			It("should return TerminationGracePeriodSeconds from VMI Spec if set", func() {
+				v1.SetObjectDefaults_VirtualMachineInstance(vmi)
+				Expect(GracePeriodSeconds(vmi)).To(BeNumerically("==", 5))
+			})
+			It("should return default grace period seconds if no grace period is set", func() {
+				v1.SetObjectDefaults_VirtualMachineInstance(vmi)
+				vmi.Spec.TerminationGracePeriodSeconds = nil
+				Expect(GracePeriodSeconds(vmi)).To(BeNumerically("==", v1.DefaultGracePeriodSeconds))
+			})
+		})
 	})
 	Context("Network convert", func() {
 		var vmi *v1.VirtualMachineInstance

@@ -2011,12 +2011,10 @@ var _ = Describe("VirtualMachine", func() {
 			It("should delete VirtualMachineInstance with specified grace-period", func() {
 				forceStopGracePeriod := int64(0)
 				vm, vmi := DefaultVirtualMachine(true)
-				stopRequestData := make(map[string]string)
-				stopRequestData[virtv1.StopRequestGracePeriodKey] = "0"
+				vmi.Spec.TerminationGracePeriodSeconds = &forceStopGracePeriod
 				vm.Status.StateChangeRequests = []virtv1.VirtualMachineStateChangeRequest{
-					virtv1.VirtualMachineStateChangeRequest{
+					{
 						Action: virtv1.StopRequest,
-						Data:   stopRequestData,
 						UID:    &vmi.UID,
 					},
 				}

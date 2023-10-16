@@ -1693,12 +1693,7 @@ func (l *LibvirtDomainManager) SignalShutdownVMI(vmi *v1.VirtualMachineInstance)
 				now := metav1.Now()
 				gracePeriodMetadata.
 					DeletionTimestamp = &now
-			}
-
-			if vmi.GetDeletionGracePeriodSeconds() != nil {
-				l.metadataCache.GracePeriod.Set(
-					api.GracePeriodMetadata{DeletionGracePeriodSeconds: converter.GracePeriodSeconds(vmi)},
-				)
+				gracePeriodMetadata.DeletionGracePeriodSeconds = converter.GracePeriodSeconds(vmi)
 			}
 		})
 		log.Log.V(4).Infof("Graceful period set in metadata: %s", l.metadataCache.GracePeriod.String())
@@ -1730,14 +1725,8 @@ func (l *LibvirtDomainManager) KillVMI(vmi *v1.VirtualMachineInstance) error {
 		return err
 	}
 
-	destroyFlags := libvirt.DOMAIN_DESTROY_GRACEFUL
-	l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
-		if gracePeriodMetadata.DeletionGracePeriodSeconds == 0 {
-			destroyFlags = libvirt.DOMAIN_DESTROY_DEFAULT
-		}
-	})
 	if domState == libvirt.DOMAIN_RUNNING || domState == libvirt.DOMAIN_PAUSED || domState == libvirt.DOMAIN_SHUTDOWN {
-		err = dom.DestroyFlags(destroyFlags)
+		err = dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
 		if err != nil {
 			if domainerrors.IsNotFound(err) {
 				return nil
@@ -1764,18 +1753,6 @@ func (l *LibvirtDomainManager) DeleteVMI(vmi *v1.VirtualMachineInstance) error {
 			log.Log.Object(vmi).Reason(err).Error(failedGetDomain)
 			return err
 		}
-	}
-
-	// if there was a force delete requested and the grace period is 0,
-	// kill the VMI before freeing the domain
-	forceDelete := false
-	l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
-		if gracePeriodMetadata.DeletionGracePeriodSeconds == 0 {
-			forceDelete = true
-		}
-	})
-	if forceDelete {
-		return l.KillVMI(vmi)
 	}
 
 	defer dom.Free()
