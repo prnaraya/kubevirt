@@ -2132,11 +2132,13 @@ func hasTabletDevice(vmi *v1.VirtualMachineInstance) bool {
 }
 
 func GracePeriodSeconds(vmi *v1.VirtualMachineInstance) int64 {
-	gracePeriodSeconds := v1.DefaultGracePeriodSeconds
-	if vmi.Spec.TerminationGracePeriodSeconds != nil {
-		gracePeriodSeconds = *vmi.Spec.TerminationGracePeriodSeconds
+	if vmi.GetDeletionGracePeriodSeconds() != nil {
+		return *vmi.GetDeletionGracePeriodSeconds()
 	}
-	return gracePeriodSeconds
+	if vmi.Spec.TerminationGracePeriodSeconds != nil {
+		return *vmi.Spec.TerminationGracePeriodSeconds
+	}
+	return v1.DefaultGracePeriodSeconds
 }
 
 func InterpretTransitionalModelType(useVirtioTransitional *bool) string {

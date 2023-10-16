@@ -1691,6 +1691,7 @@ func (l *LibvirtDomainManager) SignalShutdownVMI(vmi *v1.VirtualMachineInstance)
 			if gracePeriodMetadata.DeletionTimestamp == nil {
 				now := metav1.Now()
 				gracePeriodMetadata.DeletionTimestamp = &now
+				gracePeriodMetadata.DeletionGracePeriodSeconds = converter.GracePeriodSeconds(vmi)
 			}
 		})
 		log.Log.V(4).Infof("Graceful period set in metadata: %s", l.metadataCache.GracePeriod.String())
