@@ -289,13 +289,8 @@ func getUpdateTerminatingSecondsGracePeriod(gracePeriod int64) string {
 }
 
 func (app *SubresourceAPIApp) patchVMStatusStopped(vmi *v1.VirtualMachineInstance, vm *v1.VirtualMachine, response *restful.Response, bodyStruct *v1.StopOptions) (error, error) {
-	stopChangeRequestData := make(map[string]string)
-	if bodyStruct.GracePeriod != nil {
-		stopChangeRequestData[v1.StopRequestGracePeriodKey] = fmt.Sprintf("%d", *bodyStruct.GracePeriod)
-	}
-
 	bodyString, err := getChangeRequestJson(vm,
-		v1.VirtualMachineStateChangeRequest{Action: v1.StopRequest, Data: stopChangeRequestData, UID: &vmi.UID})
+		v1.VirtualMachineStateChangeRequest{Action: v1.StopRequest, UID: &vmi.UID})
 	if err != nil {
 		writeError(errors.NewInternalError(err), response)
 		return nil, err
@@ -381,7 +376,6 @@ func (app *SubresourceAPIApp) RestartVMRequestHandler(request *restful.Request, 
 		}
 	}
 
-	stopChangeRequestData := make(map[string]string)
 	if bodyStruct.GracePeriodSeconds != nil {
 		if *bodyStruct.GracePeriodSeconds > 0 {
 			writeError(errors.NewBadRequest(fmt.Sprintf("For force restart, only gracePeriod=0 is supported for now")), response)
@@ -390,7 +384,6 @@ func (app *SubresourceAPIApp) RestartVMRequestHandler(request *restful.Request, 
 			writeError(errors.NewBadRequest(fmt.Sprintf("gracePeriod has to be greater or equal to 0")), response)
 			return
 		}
-		stopChangeRequestData[v1.StopRequestGracePeriodKey] = fmt.Sprintf("%d", *bodyStruct.GracePeriodSeconds)
 	}
 
 	vm, statusErr := app.fetchVirtualMachine(name, namespace)
@@ -420,7 +413,7 @@ func (app *SubresourceAPIApp) RestartVMRequestHandler(request *restful.Request, 
 	}
 
 	bodyString, err := getChangeRequestJson(vm,
-		v1.VirtualMachineStateChangeRequest{Action: v1.StopRequest, Data: stopChangeRequestData, UID: &vmi.UID},
+		v1.VirtualMachineStateChangeRequest{Action: v1.StopRequest, UID: &vmi.UID},
 		v1.VirtualMachineStateChangeRequest{Action: v1.StartRequest})
 	if err != nil {
 		writeError(errors.NewInternalError(err), response)
@@ -568,6 +561,7 @@ func (app *SubresourceAPIApp) StartVMRequestHandler(request *restful.Request, re
 			patchString := getRunningJson(vm, true)
 			log.Log.Object(vm).V(4).Infof(patchingVMFmt, patchString)
 			_, patchErr = app.virtCli.VirtualMachine(namespace).Patch(context.Background(), vm.GetName(), types.MergePatchType, []byte(patchString), &k8smetav1.PatchOptions{DryRun: bodyStruct.DryRun})
+
 		}
 
 	case v1.RunStrategyRerunOnFailure, v1.RunStrategyManual:
@@ -703,6 +697,7 @@ func (app *SubresourceAPIApp) StopVMRequestHandler(request *restful.Request, res
 		bodyString := getRunningJson(vm, false)
 		log.Log.Object(vm).V(4).Infof(patchingVMFmt, bodyString)
 		_, patchErr = app.virtCli.VirtualMachine(namespace).Patch(context.Background(), vm.GetName(), patchType, []byte(bodyString), &k8smetav1.PatchOptions{DryRun: bodyStruct.DryRun})
+
 	}
 
 	if patchErr != nil {
