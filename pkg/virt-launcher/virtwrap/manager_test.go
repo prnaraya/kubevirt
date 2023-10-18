@@ -1434,25 +1434,6 @@ var _ = Describe("Manager", func() {
 
 			gracePeriod, _ := metadataCache.GracePeriod.Load()
 			Expect(gracePeriod.DeletionTimestamp).NotTo(BeNil())
-			Expect(gracePeriod.DeletionGracePeriodSeconds).To(BeNumerically("==", v1.DefaultGracePeriodSeconds))
-		})
-
-		It("when signalling shutdown, should set metadata cache grace-period to value in VMI Spec", func() {
-			mockDomain.EXPECT().GetState().AnyTimes().Return(libvirt.DOMAIN_RUNNING, 1, nil)
-			mockConn.EXPECT().LookupDomainByName(testDomainName).AnyTimes().DoAndReturn(mockDomainWithFreeExpectation)
-			mockDomain.EXPECT().ShutdownFlags(libvirt.DOMAIN_SHUTDOWN_ACPI_POWER_BTN).Return(nil)
-
-			gracePeriodSeconds := int64(15)
-			manager, _ := NewLibvirtDomainManager(mockConn, testVirtShareDir, testEphemeralDiskDir, nil, "/usr/share/OVMF", ephemeralDiskCreatorMock, metadataCache)
-
-			vmi := newVMI(testNamespace, testVmName)
-			vmi.Spec.TerminationGracePeriodSeconds = &gracePeriodSeconds
-
-			manager.SignalShutdownVMI(vmi)
-
-			gracePeriod, _ := metadataCache.GracePeriod.Load()
-			Expect(gracePeriod.DeletionTimestamp).NotTo(BeNil())
-			Expect(gracePeriod.DeletionGracePeriodSeconds).To(BeNumerically("==", gracePeriodSeconds))
 		})
 	})
 	Context("test migration monitor", func() {

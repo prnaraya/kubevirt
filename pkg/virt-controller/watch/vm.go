@@ -3039,7 +3039,7 @@ func (c *VMController) setupLiveFeatures(
 
 func (c *VMController) patchVMITerminationGracePeriod(gracePeriod *int64, vmi *virtv1.VirtualMachineInstance) error {
 
-	patch := fmt.Sprintf("{\"spec\":{\"terminationGracePeriodSeconds\": %d }}", gracePeriod)
+	patch := fmt.Sprintf(`{"spec":{"terminationGracePeriodSeconds": %d }}`, *gracePeriod)
 	_, err := c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.MergePatchType, []byte(patch), &v1.PatchOptions{})
 	return err
 }

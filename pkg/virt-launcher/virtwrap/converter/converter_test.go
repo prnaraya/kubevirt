@@ -1330,12 +1330,6 @@ var _ = Describe("Converter", func() {
 		)
 
 		Context("Should get correct DeletionGracePeriod", func() {
-			It("should return DeletionGracePeriodSeconds from VMI ObjectMeta if set", func() {
-				gracePeriod := int64(100)
-				v1.SetObjectDefaults_VirtualMachineInstance(vmi)
-				vmi.ObjectMeta.DeletionGracePeriodSeconds = &gracePeriod
-				Expect(GracePeriodSeconds(vmi)).To(BeNumerically("==", gracePeriod))
-			})
 			It("should return TerminationGracePeriodSeconds from VMI Spec if set", func() {
 				v1.SetObjectDefaults_VirtualMachineInstance(vmi)
 				Expect(GracePeriodSeconds(vmi)).To(BeNumerically("==", 5))

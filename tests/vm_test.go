@@ -1496,106 +1496,80 @@ status:
 			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
 		})
 
-		It("should force delete a stopped VM with high TerminationGracePeriod", func() {
-			By("getting a VM with a high TerminationGracePeriod")
-			vmi := libvmi.New(
-				libvmi.WithResourceMemory("128Mi"),
-				libvmi.WithTerminationGracePeriod(1600),
-			)
-			vm := tests.NewRandomVirtualMachine(vmi, false)
-			vm.Namespace = testsuite.GetTestNamespace(vm)
+		Context("Deleting a running VM with high TerminationGracePeriod via command line with", func() {
+			It("--force --grace-period=0 should force delete the VM", func() {
+				By("getting a VM with a high TerminationGracePeriod")
+				vmi := libvmi.New(
+					libvmi.WithResourceMemory("128Mi"),
+					libvmi.WithTerminationGracePeriod(1600),
+				)
+				vm := tests.NewRandomVirtualMachine(vmi, true)
+				vm.Namespace = testsuite.GetTestNamespace(vm)
 
-			vmJson, err := tests.GenerateVMJson(vm, workDir)
-			Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
+				vmJson, err := tests.GenerateVMJson(vm, workDir)
+				Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
 
-			By("Creating VM using k8s client binary")
-			_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
-			Expect(err).ToNot(HaveOccurred())
+				By("Creating VM using k8s client binary")
+				_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
+				Expect(err).ToNot(HaveOccurred())
 
-			By("Deleting VM using k8s client binary with grace-period")
-			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force")
-			Expect(err).ToNot(HaveOccurred())
+				By("Waiting for VMI to start")
+				Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).Should(BeRunning())
 
-			By("Verifying the VM gets deleted")
-			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
+				By("Checking that VM is running")
+				stdout, _, err := clientcmd.RunCommand(k8sClient, "describe", "vmis", vm.GetName())
+				Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying pod gets deleted")
-			expectedPodName := getExpectedPodName(vm)
-			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
-		})
+				Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
 
-		It("should force delete a running VM with high TerminationGracePeriod", func() {
-			By("getting a VM with a high TerminationGracePeriod")
-			vmi := libvmi.New(
-				libvmi.WithResourceMemory("128Mi"),
-				libvmi.WithTerminationGracePeriod(600),
-			)
-			vm := tests.NewRandomVirtualMachine(vmi, true)
-			vm.Namespace = testsuite.GetTestNamespace(vm)
+				By("Sending a force delete VM request using k8s client binary")
+				_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force", "--wait=false")
+				Expect(err).ToNot(HaveOccurred())
 
-			vmJson, err := tests.GenerateVMJson(vm, workDir)
-			Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
+				By("Verifying the VM gets deleted")
+				waitForResourceDeletion(k8sClient, "vms", vm.GetName())
 
-			By("Creating VM using k8s client binary")
-			_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
-			Expect(err).ToNot(HaveOccurred())
+				By("Verifying pod gets deleted")
+				expectedPodName := getExpectedPodName(vm)
+				waitForResourceDeletion(k8sClient, "pods", expectedPodName)
+			})
 
-			By("Waiting for VMI to start")
-			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).Should(BeRunning())
+			It("--now should signal immediate shutdown for the VM", func() {
+				By("getting a VM with a high TerminationGracePeriod")
+				vmi := libvmi.New(
+					libvmi.WithResourceMemory("128Mi"),
+					libvmi.WithTerminationGracePeriod(1600),
+				)
+				vm := tests.NewRandomVirtualMachine(vmi, true)
+				vm.Namespace = testsuite.GetTestNamespace(vm)
 
-			By("Checking that VM is running")
-			stdout, _, err := clientcmd.RunCommand(k8sClient, "describe", "vmis", vm.GetName())
-			Expect(err).ToNot(HaveOccurred())
+				vmJson, err := tests.GenerateVMJson(vm, workDir)
+				Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
 
-			Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
+				By("Creating VM using k8s client binary")
+				_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
+				Expect(err).ToNot(HaveOccurred())
 
-			By("Sending a force delete VM request using k8s client binary")
-			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--grace-period=0", "--force")
-			Expect(err).ToNot(HaveOccurred())
+				By("Waiting for VMI to start")
+				Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).Should(BeRunning())
 
-			By("Verifying the VM gets deleted")
-			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
+				By("Checking that VM is running")
+				stdout, _, err := clientcmd.RunCommand(k8sClient, "describe", "vmis", vm.GetName())
+				Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying pod gets deleted")
-			expectedPodName := getExpectedPodName(vm)
-			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
-		})
+				Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
 
-		It("should signal immediate shutdown for a running VM with high TerminationGracePeriod", func() {
-			By("getting a VM with a high TerminationGracePeriod")
-			vmi := libvmi.New(
-				libvmi.WithResourceMemory("128Mi"),
-				libvmi.WithTerminationGracePeriod(1600),
-			)
-			vm := tests.NewRandomVirtualMachine(vmi, true)
-			vm.Namespace = testsuite.GetTestNamespace(vm)
+				By("Sending an immediate shutdown request using k8s client binary")
+				_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--now")
+				Expect(err).ToNot(HaveOccurred())
 
-			vmJson, err := tests.GenerateVMJson(vm, workDir)
-			Expect(err).ToNot(HaveOccurred(), "Cannot generate VMs manifest")
+				By("Verifying the VM gets deleted")
+				waitForResourceDeletion(k8sClient, "vms", vm.GetName())
 
-			By("Creating VM using k8s client binary")
-			_, _, err = clientcmd.RunCommand(k8sClient, "create", "-f", vmJson)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Waiting for VMI to start")
-			Eventually(ThisVMIWith(vm.Namespace, vm.Name), 240*time.Second, 1*time.Second).Should(BeRunning())
-
-			By("Checking that VM is running")
-			stdout, _, err := clientcmd.RunCommand(k8sClient, "describe", "vmis", vm.GetName())
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(vmRunningRe.FindString(stdout)).ToNot(Equal(""), "VMI is not Running")
-
-			By("Sending an immediate shutdown request using k8s client binary")
-			_, _, err = clientcmd.RunCommand(k8sClient, "delete", "vm", vm.GetName(), "--now")
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Verifying the VM gets deleted")
-			waitForResourceDeletion(k8sClient, "vms", vm.GetName())
-
-			By("Verifying pod gets deleted")
-			expectedPodName := getExpectedPodName(vm)
-			waitForResourceDeletion(k8sClient, "pods", expectedPodName)
+				By("Verifying pod gets deleted")
+				expectedPodName := getExpectedPodName(vm)
+				waitForResourceDeletion(k8sClient, "pods", expectedPodName)
+			})
 		})
 
 		Context("should not change anything if dry-run option is passed", func() {

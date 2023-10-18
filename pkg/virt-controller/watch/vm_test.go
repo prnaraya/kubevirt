@@ -183,6 +183,11 @@ var _ = Describe("VirtualMachine", func() {
 			virtClient.EXPECT().AuthorizationV1().Return(k8sClient.AuthorizationV1()).AnyTimes()
 		})
 
+		shouldExpectGracePeriodPatched := func(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) {
+			patch := fmt.Sprintf(`{"spec":{"terminationGracePeriodSeconds": %d }}`, *vm.DeletionGracePeriodSeconds)
+			vmiInterface.EXPECT().Patch(context.Background(), vmi.Name, types.MergePatchType, []byte(patch), &metav1.PatchOptions{}).Return(vmi, nil)
+		}
+
 		shouldExpectVMIFinalizerRemoval := func(vmi *virtv1.VirtualMachineInstance) {
 			patch := fmt.Sprintf(`[{ "op": "test", "path": "/metadata/finalizers", "value": ["%s"] }, { "op": "replace", "path": "/metadata/finalizers", "value": [] }]`, virtv1.VirtualMachineControllerFinalizer)
 
@@ -2007,37 +2012,6 @@ var _ = Describe("VirtualMachine", func() {
 			testutils.ExpectEvent(recorder, SuccessfulDeleteVirtualMachineReason)
 		})
 
-		Context("VM with stop request with grace-period", func() {
-			It("should delete VirtualMachineInstance with specified grace-period", func() {
-				forceStopGracePeriod := int64(0)
-				vm, vmi := DefaultVirtualMachine(true)
-				vmi.Spec.TerminationGracePeriodSeconds = &forceStopGracePeriod
-				vm.Status.StateChangeRequests = []virtv1.VirtualMachineStateChangeRequest{
-					{
-						Action: virtv1.StopRequest,
-						UID:    &vmi.UID,
-					},
-				}
-
-				addVirtualMachine(vm)
-				vmiFeeder.Add(vmi)
-
-				vmiInterface.EXPECT().Delete(context.Background(), gomock.Any(), gomock.Any()).DoAndReturn(
-					func(ctx context.Context, name string, opts *metav1.DeleteOptions) (interface{}, interface{}) {
-						//check that grace period has been propagated to delete request
-						Expect(opts.GracePeriodSeconds).To(BeEquivalentTo(&forceStopGracePeriod))
-						return &vm, nil
-					})
-
-				vmInterface.EXPECT().UpdateStatus(context.Background(), gomock.Any()).Times(1).Return(vm, nil)
-
-				controller.Execute()
-
-				testutils.ExpectEvent(recorder, SuccessfulDeleteVirtualMachineReason)
-			})
-
-		})
-
 		It("should add controller finalizer if VirtualMachine does not have it", func() {
 			vm, _ := DefaultVirtualMachine(false)
 			vm.Finalizers = nil
@@ -2066,6 +2040,8 @@ var _ = Describe("VirtualMachine", func() {
 		It("should delete VirtualMachineInstance when VirtualMachine marked for deletion", func() {
 			vm, vmi := DefaultVirtualMachine(true)
 			vm.DeletionTimestamp = now()
+			vmGracePeriod := v1.DefaultGracePeriodSeconds
+			vm.DeletionGracePeriodSeconds = &vmGracePeriod
 
 			addVirtualMachine(vm)
 			vmiFeeder.Add(vmi)
@@ -2073,6 +2049,7 @@ var _ = Describe("VirtualMachine", func() {
 			vmiInterface.EXPECT().Delete(context.Background(), gomock.Any(), gomock.Any()).Return(nil)
 
 			vmInterface.EXPECT().UpdateStatus(context.Background(), gomock.Any()).Times(1).Return(vm, nil)
+			shouldExpectGracePeriodPatched(vm, vmi)
 
 			controller.Execute()
 
@@ -3323,6 +3300,8 @@ var _ = Describe("VirtualMachine", func() {
 					vm, vmi := DefaultVirtualMachine(true)
 
 					vm.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+					vmGracePeriod := v1.DefaultGracePeriodSeconds
+					vm.DeletionGracePeriodSeconds = &vmGracePeriod
 					vmi.Status.Phase = phase
 
 					if condType != "" {
@@ -3334,6 +3313,7 @@ var _ = Describe("VirtualMachine", func() {
 					addVirtualMachine(vm)
 					vmiFeeder.Add(vmi)
 
+					shouldExpectGracePeriodPatched(vm, vmi)
 					vmiInterface.EXPECT().Delete(context.Background(), gomock.Any(), gomock.Any()).AnyTimes()
 					vmInterface.EXPECT().UpdateStatus(context.Background(), gomock.Any()).Times(1).Do(func(ctx context.Context, obj interface{}) {
 						objVM := obj.(*virtv1.VirtualMachine)
