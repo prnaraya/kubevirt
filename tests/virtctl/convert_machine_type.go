@@ -3,9 +3,13 @@ package virtctl
 import (
 	"context"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gcustom"
+	"github.com/onsi/gomega/gstruct"
+	"github.com/onsi/gomega/types"
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "kubevirt.io/api/core/v1"
@@ -16,12 +20,13 @@ import (
 	"kubevirt.io/kubevirt/tests"
 	"kubevirt.io/kubevirt/tests/clientcmd"
 	"kubevirt.io/kubevirt/tests/decorators"
+	. "kubevirt.io/kubevirt/tests/framework/matcher"
 	"kubevirt.io/kubevirt/tests/util"
 )
 
 const (
 	machineTypeNeedsUpdate = "pc-q35-rhel8.2.0"
-	machineTypeNoUpdate    = "pc-q35-rhel9.0.0"
+	machineTypeNoUpdate    = "pc-q35-9.0.0"
 	machineTypeGlob        = "*rhel8.*"
 	update                 = "update"
 	machineTypes           = "machine-types"
@@ -37,10 +42,24 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 	var virtClient kubecli.KubevirtClient
 	var err error
 
-	BeforeEach(func() {
-		virtClient, err = kubecli.GetKubevirtClient()
+	createVM := func(virtClient kubecli.KubevirtClient, machineType, namespace string, hasLabel, running bool) *v1.VirtualMachine {
+		template := tests.NewRandomVMI()
+		template.ObjectMeta.Namespace = namespace
+		template.Spec.Domain.Machine = &v1.Machine{Type: machineType}
+		if hasLabel {
+			template.ObjectMeta.Labels = map[string]string{"testing-label": "true"}
+		}
+
+		vm := tests.NewRandomVirtualMachine(template, running)
+		vm, err = virtClient.VirtualMachine(util.NamespaceTestDefault).Create(context.Background(), vm)
 		Expect(err).ToNot(HaveOccurred())
-	})
+
+		if running {
+			vm = tests.StartVMAndExpectRunning(virtClient, vm)
+		}
+
+		return vm
+	}
 
 	expectJobExists := func() *batchv1.Job {
 		var job *batchv1.Job
@@ -57,29 +76,52 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 	}
 
 	deleteJob := func(job *batchv1.Job) {
-		err = virtClient.BatchV1().Jobs(metav1.NamespaceDefault).Delete(context.Background(), job.Name, metav1.DeleteOptions{})
+		propagationPolicy := metav1.DeletePropagationBackground
+		err = virtClient.BatchV1().Jobs("kubevirt").Delete(context.Background(), job.Name, metav1.DeleteOptions{
+			PropagationPolicy: &propagationPolicy,
+		})
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	Describe("should update the machine types of outdated VMs", func() {
+	deleteVM := func(vm *v1.VirtualMachine) {
+		err = virtClient.VirtualMachine(vm.Namespace).Delete(context.Background(), vm.Name, &metav1.DeleteOptions{})
+		Expect(err).ToNot(HaveOccurred())
+	}
 
-		It("no arguments are passed to virtctl command", func() {
+	BeforeEach(func() {
+		virtClient, err = kubecli.GetKubevirtClient()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	Describe("should update the machine types of outdated VMs", func() {
+		It("no optional arguments are passed to virtctl command", Label("virtctl-update"), func() {
 			vmNeedsUpdateStopped := createVM(virtClient, machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
 			vmNeedsUpdateRunning := createVM(virtClient, machineTypeNeedsUpdate, util.NamespaceTestDefault, false, true)
-			vmNoUpdate := createVM(virtClient, machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
+			vmNoUpdate := createVM(virtClient, machineTypeNoUpdate, util.NamespaceTestDefault, false, false)
+
+			var vmList *v1.VirtualMachineList
+			vmList, err = virtClient.VirtualMachine(metav1.NamespaceAll).List(context.Background(), &metav1.ListOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmList.Items).To(HaveLen(3))
 
 			err := clientcmd.NewRepeatableVirtctlCommand(update, machineTypes, setFlag(machineTypeFlag, machineTypeGlob))()
 			Expect(err).ToNot(HaveOccurred())
 
 			job := expectJobExists()
 
-			Expect(vmNeedsUpdateStopped.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vmNeedsUpdateRunning.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vmNoUpdate.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNoUpdate))
+			Eventually(ThisVM(vmNeedsUpdateStopped), 60*time.Second, 1*time.Second).Should(beUpdated())
+			Eventually(ThisVM(vmNeedsUpdateRunning), 60*time.Second, 1*time.Second).Should(beUpdated())
+			Eventually(ThisVM(vmNoUpdate), 60*time.Second, 1*time.Second).Should(notBeUpdated(machineTypeNoUpdate))
 
-			Expect(vmNeedsUpdateRunning.Labels).To(HaveKey(restartRequiredLabel))
+			Eventually(ThisVM(vmNeedsUpdateRunning), 60*time.Second, 1*time.Second).Should(haveRestartLabel())
 
+			Consistently(job.Status.CompletionTime, 120*time.Second, 1*time.Second).Should(BeNil())
+
+			time.Sleep(600 * time.Second)
 			deleteJob(job)
+			deleteVM(vmNeedsUpdateStopped)
+			deleteVM(vmNeedsUpdateRunning)
+			deleteVM(vmNoUpdate)
 		})
 
 		It("Example with namespace flag", func() {
@@ -95,15 +137,19 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 
 			job := expectJobExists()
 
-			Expect(vmNamespaceDefaultStopped.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vmNamespaceDefaultRunning.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vmNamespaceOtherStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-			Expect(vmNamespaceOtherRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceDefaultStopped), 60*time.Second, 1*time.Second).Should(beUpdated())
+			Eventually(ThisVM(vmNamespaceDefaultRunning), 60*time.Second, 1*time.Second).Should(beUpdated())
+			Eventually(ThisVM(vmNamespaceOtherStopped), 60*time.Second, 1*time.Second).Should(notBeUpdated(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceOtherRunning), 60*time.Second, 1*time.Second).Should(notBeUpdated(machineTypeNeedsUpdate))
 
-			Expect(vmNamespaceDefaultRunning.Labels).ToNot(HaveKey(restartRequiredLabel))
-			Expect(vmNamespaceOtherRunning.Labels).To(HaveKey(restartRequiredLabel))
+			Eventually(ThisVM(vmNamespaceDefaultRunning), 60*time.Second, 1*time.Second).ShouldNot(haveRestartLabel())
+			Eventually(ThisVM(vmNamespaceOtherRunning), 60*time.Second, 1*time.Second).Should(haveRestartLabel())
 
 			deleteJob(job)
+			deleteVM(vmNamespaceDefaultStopped)
+			deleteVM(vmNamespaceDefaultRunning)
+			deleteVM(vmNamespaceOtherStopped)
+			deleteVM(vmNamespaceOtherRunning)
 		})
 
 		It("Example with label-selector flag", func() {
@@ -119,15 +165,19 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 
 			job := expectJobExists()
 
+			Expect(vmNoLabelStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
 			Expect(vmWithLabelStopped.Spec.Template.Spec.Domain.Machine).To(BeNil())
 			Expect(vmWithLabelRunning.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vmNoLabelStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
 			Expect(vmNoLabelRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
 
 			Expect(vmWithLabelRunning.Labels).To(HaveKey(restartRequiredLabel))
 			Expect(vmNoLabelRunning.Labels).ToNot(HaveKey(restartRequiredLabel))
 
 			deleteJob(job)
+			deleteVM(vmWithLabelStopped)
+			deleteVM(vmWithLabelRunning)
+			deleteVM(vmNoLabelStopped)
+			deleteVM(vmNoLabelRunning)
 		})
 
 		It("Example with force-restart flag", func() {
@@ -158,6 +208,8 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Expect(vmi.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
 
 			deleteJob(job)
+			deleteVM(vmNeedsUpdateStopped)
+			deleteVM(vmNeedsUpdateRunning)
 		})
 
 		It("Complex example", func() {
@@ -207,28 +259,18 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Expect(vmi.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
 
 			deleteJob(job)
+			deleteVM(vmNamespaceDefaultStopped)
+			deleteVM(vmNamespaceDefaultRunning)
+			deleteVM(vmNamespaceOtherStopped)
+			deleteVM(vmNamespaceOtherRunning)
+			deleteVM(vmNamespaceDefaultWithLabelStopped)
+			deleteVM(vmNamespaceDefaultWithLabelRunning)
+			deleteVM(vmNamespaceOtherWithLabelStopped)
+			deleteVM(vmNamespaceOtherWithLabelRunning)
+			deleteVM(vmNoUpdate)
 		})
 	})
 })
-
-func createVM(virtClient kubecli.KubevirtClient, machineType, namespace string, running, hasLabel bool) *v1.VirtualMachine {
-	template := tests.NewRandomVMI()
-	template.ObjectMeta.Namespace = namespace
-	template.Spec.Domain.Machine = &v1.Machine{Type: machineType}
-	if hasLabel {
-		template.ObjectMeta.Labels = map[string]string{"testing-label": "true"}
-	}
-
-	vm := tests.NewRandomVirtualMachine(template, false)
-
-	vm, err := virtClient.VirtualMachine(namespace).Create(context.Background(), vm)
-	Expect(err).ToNot(HaveOccurred())
-
-	if !running {
-		vm = tests.StopVirtualMachine(vm)
-	}
-	return vm
-}
 
 func hasJob(jobs *batchv1.JobList) (*batchv1.Job, bool) {
 	for _, job := range jobs.Items {
@@ -238,4 +280,32 @@ func hasJob(jobs *batchv1.JobList) (*batchv1.Job, bool) {
 	}
 
 	return nil, false
+}
+
+func notBeUpdated(machineType string) types.GomegaMatcher {
+	return gcustom.MakeMatcher(func(actualVM *v1.VirtualMachine) (bool, error) {
+		machine := actualVM.Spec.Template.Spec.Domain.Machine
+		if machine != nil && machine.Type == machineType {
+			return true, nil
+		}
+		return false, nil
+	}).WithTemplate("Expected:\n{{.Actual}}\n{{.To}} to have machine type:\n{{.Data}}", machineType)
+}
+
+func beUpdated() types.GomegaMatcher {
+	return gcustom.MakeMatcher(func(actualVM *v1.VirtualMachine) (bool, error) {
+		machine := actualVM.Spec.Template.Spec.Domain.Machine
+		if machine != nil && machine.Type == "q35" {
+			return true, nil
+		}
+		return false, nil
+	}).WithTemplate("Expected: machine type of \n{{.Actual}}\n{{.To}} to be nil")
+}
+
+func haveRestartLabel() types.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"ObjectMeta": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"Labels": HaveKey(restartRequiredLabel),
+		}),
+	}))
 }

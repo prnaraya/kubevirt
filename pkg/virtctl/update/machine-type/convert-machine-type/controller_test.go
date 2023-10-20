@@ -9,13 +9,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/pointer"
-	k6tv1 "kubevirt.io/api/core/v1"
 	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
@@ -23,7 +23,7 @@ import (
 	. "kubevirt.io/kubevirt/pkg/virtctl/update/machine-type/convert-machine-type"
 )
 
-var _ = Describe("Informers", func() {
+var _ = Describe("JobController", func() {
 	var ctrl *gomock.Controller
 	var virtClient *kubecli.MockKubevirtClient
 	var vmInterface *kubecli.MockVirtualMachineInterface
@@ -34,16 +34,8 @@ var _ = Describe("Informers", func() {
 	var controller *JobController
 	var err error
 
-	shouldExpectGetVM := func(vm *virtv1.VirtualMachine) {
-		vmInterface.EXPECT().Get(context.Background(), vm.Name, &metav1.GetOptions{}).Return(vm, nil).Times(1)
-
-		kubeClient.Fake.PrependReactor("get", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
-			get, ok := action.(testing.GetAction)
-			Expect(ok).To(BeTrue())
-			Expect(get.GetNamespace()).To(Equal(metav1.NamespaceDefault))
-			Expect(get.GetName()).To(Equal(vm.Name))
-			return true, vm, nil
-		})
+	shouldExpectGetVMI := func(vmi *virtv1.VirtualMachineInstance) {
+		vmiInterface.EXPECT().Get(context.Background(), vmi.Name, &metav1.GetOptions{}).Return(vmi, nil).Times(1)
 	}
 
 	shouldExpectVMICreation := func(vmi *virtv1.VirtualMachineInstance) {
@@ -56,7 +48,7 @@ var _ = Describe("Informers", func() {
 		})
 	}
 
-	shouldExpectVMIDeletion := func(vmi *virtv1.VirtualMachineInstance) {
+	shouldExpectVMIDeletion := func(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) {
 		kubeClient.Fake.PrependReactor("delete", "virtualmachineinstances", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
 			delete, ok := action.(testing.DeleteAction)
 			Expect(ok).To(BeTrue())
@@ -81,7 +73,7 @@ var _ = Describe("Informers", func() {
 		})
 	}
 
-	addVmi := func(vmi *k6tv1.VirtualMachineInstance) {
+	addVmi := func(vmi *virtv1.VirtualMachineInstance) {
 		key, err := cache.MetaNamespaceKeyFunc(vmi)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
@@ -90,7 +82,7 @@ var _ = Describe("Informers", func() {
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 	}
 
-	deleteVmi := func(vmi *k6tv1.VirtualMachineInstance) {
+	deleteVmi := func(vmi *virtv1.VirtualMachineInstance) {
 		key, err := cache.MetaNamespaceKeyFunc(vmi)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
@@ -100,8 +92,8 @@ var _ = Describe("Informers", func() {
 	}
 
 	Describe("When VMI is deleted", func() {
-		var vm *k6tv1.VirtualMachine
-		var vmi *k6tv1.VirtualMachineInstance
+		var vm *virtv1.VirtualMachine
+		var vmi *virtv1.VirtualMachineInstance
 
 		BeforeEach(func() {
 			ctrl = gomock.NewController(GinkgoT())
@@ -118,8 +110,8 @@ var _ = Describe("Informers", func() {
 			mockQueue = testutils.NewMockWorkQueue(controller.Queue)
 			controller.Queue = mockQueue
 
-			go controller.VmiInformer.Run(controller.ExitJob)
-			Expect(cache.WaitForCacheSync(controller.ExitJob, controller.VmiInformer.HasSynced)).To(BeTrue())
+			go controller.VmInformer.Run(controller.ExitJob)
+			Expect(cache.WaitForCacheSync(controller.ExitJob, controller.VmInformer.HasSynced)).To(BeTrue())
 
 			virtClient.EXPECT().VirtualMachine(gomock.Any()).Return(vmInterface).AnyTimes()
 			virtClient.EXPECT().VirtualMachineInstance(gomock.Any()).Return(vmiInterface).AnyTimes()
@@ -131,7 +123,7 @@ var _ = Describe("Informers", func() {
 				vmi = newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
 				addVmi(vmi)
 
-				shouldExpectGetVM(vm)
+				shouldExpectGetVMI(vmi)
 				shouldExpectVMICreation(vmi)
 				shouldExpectVMIDeletion(vmi)
 
@@ -139,19 +131,22 @@ var _ = Describe("Informers", func() {
 				controller.Execute()
 
 				Expect(vm.Labels).To(HaveKey("restart-vm-required"))
+				Expect(controller.ExitJob).ToNot(BeClosed(), "should not signal job termination as long as labels exist")
 			})
 		})
 
 		Context("if VM machine type has been updated", func() {
 			It("should remove `restart-vm-required` label from VM", func() {
+				selector, _ := labels.Parse("restart-vm-required=")
+				fmt.Println(selector.String())
 				vm = newVMWithRestartLabel("")
 				vmi = newVMIWithMachineType(machineTypeNoUpdate, vm.Name)
 				addVmi(vmi)
 
-				shouldExpectGetVM(vm)
+				shouldExpectGetVMI(vmi)
 				shouldExpectVMICreation(vmi)
 				vmInterface.EXPECT().List(context.Background(), &metav1.ListOptions{
-					LabelSelector: `restart-vm-required=""`,
+					LabelSelector: `restart-vm-required=`,
 				}).Return(&virtv1.VirtualMachineList{
 					Items: []virtv1.VirtualMachine{},
 				}, nil).Times(1)
@@ -172,10 +167,10 @@ func newVMWithRestartLabel(machineType string) *virtv1.VirtualMachine {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("test-vm-%s", machineType),
 			Namespace: metav1.NamespaceDefault,
-			Labels:    map[string]string{"restart-vm-required": "true"},
+			Labels:    map[string]string{"restart-vm-required": ""},
 		},
 		Spec: virtv1.VirtualMachineSpec{
-			Running: pointer.Bool(false),
+			Running: pointer.Bool(true),
 			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
 				Spec: virtv1.VirtualMachineInstanceSpec{
 					Domain: virtv1.DomainSpec{},

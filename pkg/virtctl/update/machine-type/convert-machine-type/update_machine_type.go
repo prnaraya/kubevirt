@@ -34,15 +34,17 @@ func matchMachineType(machineType string) (bool, error) {
 	return true, nil
 }
 
-func isMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
-	return vm.Spec.Template.Spec.Domain.Machine == nil
-}
-
 func (c *JobController) patchMachineType(vm *k6tv1.VirtualMachine) error {
+	// removing the machine type field from the VM spec reverts it to
+	// the default machine type of the VM's arch
 	updateMachineType := `[{"op": "remove", "path": "/spec/template/spec/domain/machine"}]`
 
 	_, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(updateMachineType), &k8sv1.PatchOptions{})
 	return err
+}
+
+func isMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
+	return vm.Spec.Template.Spec.Domain.Machine == nil
 }
 
 func (c *JobController) UpdateMachineTypes() error {

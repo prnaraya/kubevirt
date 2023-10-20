@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 	k6tv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -39,7 +40,13 @@ func Run() {
 
 	selectorEnv, exists := os.LookupEnv("LABEL_SELECTOR")
 	if exists {
-		LabelSelector = selectorEnv
+		// validate label-selector syntax
+		labelSelector, err := labels.Parse(selectorEnv)
+		if err != nil {
+			fmt.Printf("Error parsing label-selector: %s. Using default label-selector.\n", err)
+			os.Exit(1)
+		}
+		LabelSelector = labelSelector.String()
 	}
 
 	// set up JobController
@@ -49,9 +56,9 @@ func Run() {
 	}
 
 	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
-	vmiInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
+	vmInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
 
-	controller, err := NewJobController(vmiInformer, virtCli)
+	controller, err := NewJobController(vmInformer, virtCli)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -63,7 +70,9 @@ func Run() {
 		fmt.Println(err)
 	}
 
-	numVmisPendingUpdate := controller.numVmisPendingUpdate()
+	// if no running VMs have been updated or need to be
+	// restarted by this point, job can terminate
+	numVmisPendingUpdate := controller.numVmsPendingUpdate()
 	if numVmisPendingUpdate <= 0 {
 		close(controller.ExitJob)
 	}

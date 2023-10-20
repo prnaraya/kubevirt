@@ -3,7 +3,6 @@ package convertmachinetype
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,31 +15,36 @@ import (
 )
 
 type JobController struct {
-	VmiInformer cache.SharedIndexInformer
-	VirtClient  kubecli.KubevirtClient
-	Queue       workqueue.RateLimitingInterface
-	ExitJob     chan struct{}
+	VmInformer cache.SharedIndexInformer
+	VirtClient kubecli.KubevirtClient
+	Queue      workqueue.RateLimitingInterface
+	ExitJob    chan struct{}
 }
 
 func NewJobController(
-	vmiInformer cache.SharedIndexInformer,
+	vmInformer cache.SharedIndexInformer,
 	virtClient kubecli.KubevirtClient,
 ) (*JobController, error) {
 	c := &JobController{
-		VmiInformer: vmiInformer,
-		VirtClient:  virtClient,
-		Queue:       workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		ExitJob:     make(chan struct{}),
+		VmInformer: vmInformer,
+		VirtClient: virtClient,
+		Queue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		ExitJob:    make(chan struct{}),
 	}
 
-	_, err := vmiInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := vmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			key, err := cache.MetaNamespaceKeyFunc(obj)
+			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err == nil {
 				c.Queue.Add(key)
 			}
 		},
-
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(newObj)
+			if err == nil {
+				c.Queue.Add(key)
+			}
+		},
 		DeleteFunc: func(obj interface{}) {
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err == nil {
@@ -62,17 +66,12 @@ func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 		return err
 	}
 
-	numVmisPendingUpdate := c.numVmisPendingUpdate()
-	fmt.Printf("Num vmis pending update: %d", numVmisPendingUpdate)
-	if numVmisPendingUpdate == 0 {
-		close(c.ExitJob)
-	}
 	return nil
 }
 
-func (c *JobController) numVmisPendingUpdate() int {
+func (c *JobController) numVmsPendingUpdate() int {
 	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{
-		LabelSelector: `restart-vm-required=""`,
+		LabelSelector: "restart-vm-required=",
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -86,9 +85,9 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 	defer c.Queue.ShutDown()
 
 	fmt.Print("Starting job controller")
-	go c.VmiInformer.Run(stopCh)
+	go c.VmInformer.Run(stopCh)
 
-	if !cache.WaitForCacheSync(stopCh, c.VmiInformer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.VmInformer.HasSynced) {
 		fmt.Print("Timed out waiting for caches to sync")
 		return
 	}
@@ -121,52 +120,57 @@ func (c *JobController) Execute() bool {
 }
 
 func (c *JobController) execute(key string) error {
-	_, exists, err := c.VmiInformer.GetStore().GetByKey(key)
-	if err != nil {
+	obj, exists, err := c.VmInformer.GetStore().GetByKey(key)
+	if !exists || err != nil {
 		return err
 	}
 
-	if !exists {
-		namespace, name := parseKey(key)
-		c.handleDeletedVmi(namespace, name)
+	vm, ok := obj.(*k6tv1.VirtualMachine)
+	if !ok {
+		return fmt.Errorf("Unexpected resource %+v", obj)
 	}
+
+	c.handleVM(vm.DeepCopy())
 
 	return nil
 }
 
-func (c *JobController) handleDeletedVmi(namespace, name string) {
-	vm, err := c.VirtClient.VirtualMachine(namespace).Get(context.Background(), name, &k8sv1.GetOptions{})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
+func (c *JobController) handleVM(vm *k6tv1.VirtualMachine) {
 	// check if VM has restart-vm-required label
 	if _, ok := vm.Labels["restart-vm-required"]; !ok {
 		return
 	}
 
-	// check that VM machine type is not outdated in the case that a VM
-	// has been restarted for a different reason before its machine type
-	// has been updated
+	// check that VM machine type has been updated
 	updated := isMachineTypeUpdated(vm)
-	if err != nil {
-		fmt.Print(err)
-		return
-	}
-
 	if !updated {
 		return
 	}
 
+	// for running VMs, check that machine type in VMI status no longer
+	// matches glob
+	if *vm.Spec.Running {
+		vmi, err := c.VirtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8sv1.GetOptions{})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		match, err := matchMachineType(vmi.Status.Machine.Type)
+		if match || err != nil {
+			fmt.Println(err)
+			return
+		}
+
+	}
+
 	// remove warning label from VM
-	err = c.removeWarningLabel(vm)
+	err := c.removeWarningLabel(vm)
 	if err != nil {
 		fmt.Println(err)
 	}
-}
 
-func parseKey(key string) (namespace, name string) {
-	keySubstrings := strings.Split(key, "/")
-	return keySubstrings[0], keySubstrings[1]
+	numVmsPendingUpdate := c.numVmsPendingUpdate()
+	if numVmsPendingUpdate <= 0 {
+		close(c.ExitJob)
+	}
 }

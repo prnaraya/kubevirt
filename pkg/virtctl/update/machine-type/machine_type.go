@@ -38,10 +38,10 @@ var (
 func NewMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   machineTypeCmd,
-		Short: "Perform a mass machine type transition on any VMs that have an outdated machine type.",
-		Long: `Create a Job that iterates through VMs, updating the machine type of any VMs that have an outdated machine type. If a VM is running, it will also label the VM with 'restart-vm-required=true', indicating the user will need to perform manually by default. If --force-restart is set to true, the VM will be automatically restarted and the label will be removed. The Job will terminate once all VMs have their machine types updated, and all 'restart-vm-required' labels have been cleared.
+		Short: "Perform a mass machine type transition on any VMs with a machine type matching the specified glob.",
+		Long: `Create and deploy a Job that iterates through VMs, updating the machine type of any VMs that match the specified machine type to the latest machine type. If a VM is running, it will also label the VM with 'restart-vm-required=true', indicating the user will need to perform manually by default. If --force-restart is set to true, the VM will be automatically restarted and the label will be removed. The Job will terminate once all VMs have their machine types updated, and all 'restart-vm-required' labels have been cleared.
 		If no namespace is specified via --namespace, the mass machine type transition will be applied across all namespaces.
-		Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated using 'kubectl'.`,
+		Note that should the Job fail, it will be restarted. Additonally, once the Job is terminated, it will not be automatically deleted. The Job can be monitored and then deleted manually after it has been terminated using 'kubectl' commands.`,
 		Example: usage(),
 		Args:    templates.ExactArgs(machineTypeCmd, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,16 +63,16 @@ func NewMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 
 func usage() string {
 	usage := `  # Update the machine types of all VMs with the designated machine type across all namespaces without automatically restarting running VMs:
-  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.*
+  {{ProgramName}} update machine-types --which-matches-glob=*q35-2.*
 
   # Update the machine types of all VMs with the designated machine type in the namespace 'default':
-  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.* --namespace=default
+  {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --namespace=default
 
   # Update the machine types of all VMs with the designated machine type and automatically restart them if they are running:
-  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.* --force-restart=true
+  {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --force-restart=true
   
   # Update the machine types of all VMs with the designated machine type and with the label 'kubevirt.io/memory=large':
-  {{ProgramName}} update machine-types --which-matches-glob=*rhel-8.* --label-selector=kubevirt.io/memory=large`
+  {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --label-selector=kubevirt.io/memory=large`
 	return usage
 }
 
