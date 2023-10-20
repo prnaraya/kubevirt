@@ -73,12 +73,12 @@ func Run() {
 	// if no running VMs have been updated or need to be
 	// restarted by this point, job can terminate
 	numVmisPendingUpdate := controller.numVmsPendingUpdate()
+	fmt.Printf("VMIs pending update: %d\n", numVmisPendingUpdate)
 	if numVmisPendingUpdate <= 0 {
 		close(controller.ExitJob)
 	}
 
 	<-controller.ExitJob
-
 	os.Exit(0)
 }
 

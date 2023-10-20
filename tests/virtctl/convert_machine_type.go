@@ -2,6 +2,7 @@ package virtctl
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -38,7 +39,7 @@ const (
 	testLabel              = "testing-label=true"
 )
 
-var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
+var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
 	var virtClient kubecli.KubevirtClient
 	var err error
 
@@ -89,6 +90,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 	}
 
 	BeforeEach(func() {
+		fmt.Printf("getting kv client")
 		virtClient, err = kubecli.GetKubevirtClient()
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -115,9 +117,9 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 
 			Eventually(ThisVM(vmNeedsUpdateRunning), 60*time.Second, 1*time.Second).Should(haveRestartLabel())
 
-			Consistently(job.Status.CompletionTime, 120*time.Second, 1*time.Second).Should(BeNil())
+			Consistently(thisJob(virtClient, job), 300*time.Second, 1*time.Second).Should(haveEmptyCompletionTime())
 
-			time.Sleep(600 * time.Second)
+			tests.StopVirtualMachine(vmNeedsUpdateRunning)
 			deleteJob(job)
 			deleteVM(vmNeedsUpdateStopped)
 			deleteVM(vmNeedsUpdateRunning)
@@ -145,6 +147,8 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Eventually(ThisVM(vmNamespaceDefaultRunning), 60*time.Second, 1*time.Second).ShouldNot(haveRestartLabel())
 			Eventually(ThisVM(vmNamespaceOtherRunning), 60*time.Second, 1*time.Second).Should(haveRestartLabel())
 
+			tests.StopVirtualMachine(vmNamespaceDefaultRunning)
+			tests.StopVirtualMachine(vmNamespaceOtherRunning)
 			deleteJob(job)
 			deleteVM(vmNamespaceDefaultStopped)
 			deleteVM(vmNamespaceDefaultRunning)
@@ -173,6 +177,8 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Expect(vmWithLabelRunning.Labels).To(HaveKey(restartRequiredLabel))
 			Expect(vmNoLabelRunning.Labels).ToNot(HaveKey(restartRequiredLabel))
 
+			tests.StopVirtualMachine(vmNoLabelRunning)
+			tests.StopVirtualMachine(vmWithLabelRunning)
 			deleteJob(job)
 			deleteVM(vmWithLabelStopped)
 			deleteVM(vmWithLabelRunning)
@@ -207,6 +213,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Expect(vmNeedsUpdateRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
 			Expect(vmi.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
 
+			tests.StopVirtualMachine(vmNeedsUpdateRunning)
 			deleteJob(job)
 			deleteVM(vmNeedsUpdateStopped)
 			deleteVM(vmNeedsUpdateRunning)
@@ -258,6 +265,10 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Expect(vmNamespaceDefaultWithLabelRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
 			Expect(vmi.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
 
+			tests.StopVirtualMachine(vmNamespaceDefaultRunning)
+			tests.StopVirtualMachine(vmNamespaceOtherRunning)
+			tests.StopVirtualMachine(vmNamespaceDefaultWithLabelRunning)
+			tests.StopVirtualMachine(vmNamespaceOtherWithLabelRunning)
 			deleteJob(job)
 			deleteVM(vmNamespaceDefaultStopped)
 			deleteVM(vmNamespaceDefaultRunning)
@@ -306,6 +317,20 @@ func haveRestartLabel() types.GomegaMatcher {
 	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 		"ObjectMeta": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 			"Labels": HaveKey(restartRequiredLabel),
+		}),
+	}))
+}
+
+func thisJob(virtClient kubecli.KubevirtClient, job *batchv1.Job) func() (*batchv1.Job, error) {
+	return func() (j *batchv1.Job, err error) {
+		return virtClient.BatchV1().Jobs(job.Namespace).Get(context.Background(), job.Name, metav1.GetOptions{})
+	}
+}
+
+func haveEmptyCompletionTime() types.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"CompletionTime": BeNil(),
 		}),
 	}))
 }

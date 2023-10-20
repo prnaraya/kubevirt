@@ -34,13 +34,13 @@ func NewJobController(
 
 	_, err := vmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+			key, err := cache.MetaNamespaceKeyFunc(obj)
 			if err == nil {
 				c.Queue.Add(key)
 			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(newObj)
+			key, err := cache.MetaNamespaceKeyFunc(newObj)
 			if err == nil {
 				c.Queue.Add(key)
 			}
@@ -84,11 +84,11 @@ func (c *JobController) numVmsPendingUpdate() int {
 func (c *JobController) run(stopCh <-chan struct{}) {
 	defer c.Queue.ShutDown()
 
-	fmt.Print("Starting job controller")
+	fmt.Println("Starting job controller")
 	go c.VmInformer.Run(stopCh)
 
-	if !cache.WaitForCacheSync(stopCh, c.VmInformer.HasSynced) {
-		fmt.Print("Timed out waiting for caches to sync")
+	if !cache.WaitForCacheSync(make(<-chan struct{}), c.VmInformer.HasSynced) {
+		fmt.Println("Timed out waiting for caches to sync")
 		return
 	}
 
@@ -149,18 +149,23 @@ func (c *JobController) handleVM(vm *k6tv1.VirtualMachine) {
 
 	// for running VMs, check that machine type in VMI status no longer
 	// matches glob
-	if *vm.Spec.Running {
+	if (vm.Spec.Running != nil && *vm.Spec.Running) || vm.Spec.RunStrategy != nil {
 		vmi, err := c.VirtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8sv1.GetOptions{})
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
+
+		if vmi.Status.Phase != k6tv1.Running {
+			fmt.Printf("VMI %s is not in Running phase\n", vmi.Name)
+			return
+		}
+
 		match, err := matchMachineType(vmi.Status.Machine.Type)
 		if match || err != nil {
 			fmt.Println(err)
 			return
 		}
-
 	}
 
 	// remove warning label from VM
@@ -170,6 +175,7 @@ func (c *JobController) handleVM(vm *k6tv1.VirtualMachine) {
 	}
 
 	numVmsPendingUpdate := c.numVmsPendingUpdate()
+	fmt.Printf("VMIs pending update: %d\n", numVmsPendingUpdate)
 	if numVmsPendingUpdate <= 0 {
 		close(c.ExitJob)
 	}

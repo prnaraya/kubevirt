@@ -62,7 +62,7 @@ func (c *JobController) UpdateMachineTypes() error {
 
 	for _, vm := range vmList.Items {
 
-		if *vm.Spec.Running {
+		if (vm.Spec.Running != nil && *vm.Spec.Running) || (vm.Spec.RunStrategy != nil && *vm.Spec.RunStrategy != k6tv1.RunStrategyHalted) {
 			vmi, err := c.VirtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8sv1.GetOptions{})
 			if err != nil {
 				fmt.Print(err)

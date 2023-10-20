@@ -29,13 +29,46 @@ var _ = Describe("JobController", func() {
 	var vmInterface *kubecli.MockVirtualMachineInterface
 	var vmiInterface *kubecli.MockVirtualMachineInstanceInterface
 	var kubeClient *fake.Clientset
-	var vmiInformer cache.SharedIndexInformer
+	var vmInformer cache.SharedIndexInformer
 	var mockQueue *testutils.MockWorkQueue
 	var controller *JobController
 	var err error
 
 	shouldExpectGetVMI := func(vmi *virtv1.VirtualMachineInstance) {
 		vmiInterface.EXPECT().Get(context.Background(), vmi.Name, &metav1.GetOptions{}).Return(vmi, nil).Times(1)
+	}
+
+	addVM := func(vm *virtv1.VirtualMachine) {
+		key, err := cache.MetaNamespaceKeyFunc(vm)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+		mockQueue.Add(key)
+		err = vmInformer.GetStore().Add(vm)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	}
+
+	updateVM := func(vm *virtv1.VirtualMachine) {
+		key, err := cache.MetaNamespaceKeyFunc(vm)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+		mockQueue.Add(key)
+		err = vmInformer.GetStore().Update(vm)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	}
+
+	shouldUpdateVMRunningSpec := func(vm *virtv1.VirtualMachine) {
+		kubeClient.Fake.PrependReactor("update", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
+			update, ok := action.(testing.UpdateAction)
+			Expect(ok).To(BeTrue())
+			updatedVM, ok := update.GetObject().(*virtv1.VirtualMachine)
+			Expect(ok).To(BeTrue())
+			Expect(updatedVM.Namespace).To(Equal(vm.Namespace))
+			Expect(updatedVM.Name).To(Equal(vm.Name))
+			Expect(updatedVM.Spec.Running).To(HaveValue(BeFalse()))
+			return true, updatedVM, nil
+		})
+		vmInterface.EXPECT().Update(gomock.Any(), gomock.Any()).Return(vm, nil)
+		updateVM(vm)
 	}
 
 	shouldExpectVMICreation := func(vmi *virtv1.VirtualMachineInstance) {
@@ -48,7 +81,7 @@ var _ = Describe("JobController", func() {
 		})
 	}
 
-	shouldExpectVMIDeletion := func(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) {
+	shouldExpectVMIDeletion := func(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) *virtv1.VirtualMachine {
 		kubeClient.Fake.PrependReactor("delete", "virtualmachineinstances", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
 			delete, ok := action.(testing.DeleteAction)
 			Expect(ok).To(BeTrue())
@@ -56,39 +89,20 @@ var _ = Describe("JobController", func() {
 
 			return true, nil, nil
 		})
+
+		vm.Spec.Running = pointer.Bool(false)
+		shouldUpdateVMRunningSpec(vm)
+		vm, err = virtClient.VirtualMachine(vm.Namespace).Update(context.Background(), vm)
+		return vm
 	}
 
 	shouldExpectRemoveLabel := func(vm *virtv1.VirtualMachine) {
 		patchData := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
 
-		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &metav1.PatchOptions{}).Times(1)
-
-		kubeClient.Fake.PrependReactor("patch", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
-			patch, ok := action.(testing.PatchAction)
-			Expect(ok).To(BeTrue())
-			Expect(patch.GetPatch()).To(Equal([]byte(patchData)))
-			Expect(patch.GetPatchType()).To(Equal(types.MergePatchType))
-			Expect(vm.Labels).ToNot(HaveKey("restart-vm-required"), "should remove `restart-vm-required` label")
-			return true, vm, nil
-		})
-	}
-
-	addVmi := func(vmi *virtv1.VirtualMachineInstance) {
-		key, err := cache.MetaNamespaceKeyFunc(vmi)
-		ExpectWithOffset(1, err).ToNot(HaveOccurred())
-
-		mockQueue.Add(key)
-		err = vmiInformer.GetStore().Add(vmi)
-		ExpectWithOffset(1, err).ToNot(HaveOccurred())
-	}
-
-	deleteVmi := func(vmi *virtv1.VirtualMachineInstance) {
-		key, err := cache.MetaNamespaceKeyFunc(vmi)
-		ExpectWithOffset(1, err).ToNot(HaveOccurred())
-
-		mockQueue.Add(key)
-		err = vmiInformer.GetStore().Delete(vmi)
-		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &metav1.PatchOptions{}).DoAndReturn(func(ctx context.Context, name string, patchType types.PatchType, data []byte, opts *metav1.PatchOptions, subresources ...interface{}) (*virtv1.VirtualMachine, error) {
+			delete(vm.Labels, "restart-vm-required")
+			return vm, nil
+		}).Times(1)
 	}
 
 	Describe("When VMI is deleted", func() {
@@ -102,9 +116,9 @@ var _ = Describe("JobController", func() {
 			vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 			kubeClient = fake.NewSimpleClientset()
 
-			vmiInformer, _ = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
+			vmInformer, _ = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
 
-			controller, err = NewJobController(vmiInformer, virtClient)
+			controller, err = NewJobController(vmInformer, virtClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			mockQueue = testutils.NewMockWorkQueue(controller.Queue)
@@ -121,13 +135,12 @@ var _ = Describe("JobController", func() {
 			It("should not remove `restart-vm-required` label from VM", func() {
 				vm = newVMWithRestartLabel(machineTypeNeedsUpdate)
 				vmi = newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
-				addVmi(vmi)
+				addVM(vm)
 
 				shouldExpectGetVMI(vmi)
 				shouldExpectVMICreation(vmi)
-				shouldExpectVMIDeletion(vmi)
+				shouldExpectVMIDeletion(vmi, vm)
 
-				deleteVmi(vmi)
 				controller.Execute()
 
 				Expect(vm.Labels).To(HaveKey("restart-vm-required"))
@@ -141,7 +154,7 @@ var _ = Describe("JobController", func() {
 				fmt.Println(selector.String())
 				vm = newVMWithRestartLabel("")
 				vmi = newVMIWithMachineType(machineTypeNoUpdate, vm.Name)
-				addVmi(vmi)
+				addVM(vm)
 
 				shouldExpectGetVMI(vmi)
 				shouldExpectVMICreation(vmi)
@@ -151,10 +164,9 @@ var _ = Describe("JobController", func() {
 					Items: []virtv1.VirtualMachine{},
 				}, nil).Times(1)
 
-				shouldExpectVMIDeletion(vmi)
+				shouldExpectVMIDeletion(vmi, vm)
 				shouldExpectRemoveLabel(vm)
 
-				deleteVmi(vmi)
 				controller.Execute()
 				Expect(controller.ExitJob).To(BeClosed(), "should signal job termination when no VMs with 'restart-vm-required' label remain")
 			})
