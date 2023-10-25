@@ -55,8 +55,8 @@ func Run() {
 		os.Exit(1)
 	}
 
-	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
-	vmInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
+	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachines", Namespace, fields.Everything())
+	vmInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachine{}, 1*time.Hour, cache.Indexers{})
 
 	controller, err := NewJobController(vmInformer, virtCli)
 	if err != nil {
