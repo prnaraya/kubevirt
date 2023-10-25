@@ -29,7 +29,7 @@ type MachineTypeCommand struct {
 // holding flag information
 var (
 	namespaceFlag     string
-	forceRestartFlag  bool
+	restartNowFlag    bool
 	labelSelectorFlag string
 	machineTypeFlag   string
 )
@@ -54,7 +54,7 @@ func NewMachineTypeCommand(clientConfig clientcmd.ClientConfig) *cobra.Command {
 	cmd.Flags().StringVar(&machineTypeFlag, "which-matches-glob", "", "Machine type to be updated. This flag is required.")
 	cmd.MarkFlagRequired("which-matches-glob")
 	cmd.Flags().StringVar(&namespaceFlag, "namespace", "", "Namespace in which the mass machine type transition will be applied. Leave empty to apply to all namespaces.")
-	cmd.Flags().BoolVar(&forceRestartFlag, "force-restart", false, "When true, restarts all VMs that have their machine types updated. Otherwise, updated VMs must be restarted manually for the machine type change to take effect.")
+	cmd.Flags().BoolVar(&restartNowFlag, "restart-now", false, "When true, immediately restarts all VMs that have their machine types updated. Otherwise, updated VMs must be restarted manually for the machine type change to take effect.")
 	cmd.Flags().StringVar(&labelSelectorFlag, "label-selector", "", "Selector (label query) on which to filter VMs to be updated.")
 	cmd.SetUsageTemplate(templates.UsageTemplate())
 
@@ -69,7 +69,7 @@ func usage() string {
   {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --namespace=default
 
   # Update the machine types of all VMs with the designated machine type and automatically restart them if they are running:
-  {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --force-restart=true
+  {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --restart-now=true
   
   # Update the machine types of all VMs with the designated machine type and with the label 'kubevirt.io/memory=large':
   {{ProgramName}} update machine-types --which-matches-glob=*q35-2.* --label-selector=kubevirt.io/memory=large`
@@ -126,7 +126,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 								},
 								{
 									Name:  "FORCE_RESTART",
-									Value: strconv.FormatBool(forceRestartFlag),
+									Value: strconv.FormatBool(restartNowFlag),
 								},
 								{
 									Name:  "LABEL_SELECTOR",

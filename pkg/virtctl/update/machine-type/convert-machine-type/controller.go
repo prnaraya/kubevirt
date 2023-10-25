@@ -12,10 +12,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	k6tv1 "kubevirt.io/api/core/v1"
+	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 )
 
 type JobController struct {
+	VmInformer  cache.SharedIndexInformer
 	VmiInformer cache.SharedIndexInformer
 	VirtClient  kubecli.KubevirtClient
 	Queue       workqueue.RateLimitingInterface
@@ -23,30 +25,28 @@ type JobController struct {
 }
 
 func NewJobController(
-	vmiInformer cache.SharedIndexInformer,
+	vmInformer, vmiInformer cache.SharedIndexInformer,
 	virtClient kubecli.KubevirtClient,
 ) (*JobController, error) {
 	c := &JobController{
+		VmInformer:  vmInformer,
 		VmiInformer: vmiInformer,
 		VirtClient:  virtClient,
 		Queue:       workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		ExitJob:     make(chan struct{}),
 	}
 
-	_, err := vmiInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			key, err := cache.MetaNamespaceKeyFunc(obj)
-			if err == nil {
-				c.Queue.Add(key)
-			}
-		},
-
-		DeleteFunc: func(obj interface{}) {
-			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-			if err == nil {
-				c.Queue.Add(key)
-			}
-		},
+	_, err := vmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.genericEventHandler,
+		UpdateFunc: func(_, newObj interface{}) { c.genericEventHandler(newObj) },
+		DeleteFunc: c.genericEventHandler,
+	})
+	if err != nil {
+		return nil, err
+	}
+	_, err = vmiInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.genericEventHandler,
+		DeleteFunc: c.genericEventHandler,
 	})
 	if err != nil {
 		return nil, err
@@ -82,9 +82,10 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 	informerStopCh := make(chan struct{})
 
 	fmt.Println("Starting job controller")
+	go c.VmInformer.Run(informerStopCh)
 	go c.VmiInformer.Run(informerStopCh)
 
-	if !cache.WaitForCacheSync(informerStopCh, c.VmiInformer.HasSynced) {
+	if !cache.WaitForCacheSync(informerStopCh, c.VmInformer.HasSynced, c.VmiInformer.HasSynced) {
 		fmt.Println("Timed out waiting for caches to sync")
 		return
 	}
@@ -130,13 +131,22 @@ func (c *JobController) execute(key string) error {
 	return nil
 }
 
+func (c *JobController) genericEventHandler(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err == nil {
+		c.Queue.Add(key)
+	}
+}
+
 func (c *JobController) handleDeletedVmi(namespace, name string) {
-	vm, err := c.VirtClient.VirtualMachine(namespace).Get(context.Background(), name, &k8sv1.GetOptions{})
-	if err != nil {
+	// get VM from cache
+	vmKey := fmt.Sprintf("%s/%s", namespace, name)
+	obj, exists, err := c.VmInformer.GetStore().GetByKey(vmKey)
+	if !exists || err != nil {
 		fmt.Println(err)
 		return
 	}
-
+	vm := obj.(*k6tv1.VirtualMachine)
 	// check if VM has restart-vm-required label
 	if _, ok := vm.Labels["restart-vm-required"]; !ok {
 		fmt.Println("vm does not have restart label")
@@ -157,6 +167,16 @@ func (c *JobController) handleDeletedVmi(namespace, name string) {
 		return
 	}
 
+	// isRunning, err := vmIsRunning(vm)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
+
+	// if isRunning {
+	// 	obj, exists, err = c.VmiInformer.GetStore().GetByKey(vmKey)
+	// }
+
 	// remove warning label from VM
 	err = c.removeWarningLabel(vm)
 	if err != nil {
@@ -173,4 +193,18 @@ func (c *JobController) handleDeletedVmi(namespace, name string) {
 func parseKey(key string) (namespace, name string) {
 	keySubstrings := strings.Split(key, "/")
 	return keySubstrings[0], keySubstrings[1]
+}
+
+func vmIsRunning(vm *v1.VirtualMachine) (bool, error) {
+	runStrategy, err := vm.RunStrategy()
+	if err != nil {
+		return false, err
+	}
+
+	switch runStrategy {
+	case v1.RunStrategyHalted, v1.RunStrategyManual, v1.RunStrategyOnce:
+		return false, nil
+	default:
+		return true, nil
+	}
 }
