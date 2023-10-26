@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	machineTypeNeedsUpdate = "pc-q35-rhel8.2.0"
-	machineTypeNoUpdate    = "pc-q35-9.0.0"
-	machineTypeGlob        = "*rhel8.*"
+	machineTypeNeedsUpdate = "pc-q35-1.7"
+	machineTypeNoUpdate    = "pc-q35-2.4"
+	machineTypeGlob        = "*q35-1.*"
 	update                 = "update"
 	machineTypes           = "machine-types"
 	restartRequiredLabel   = "restart-vm-required"
@@ -41,7 +41,7 @@ const (
 	testLabel              = "testing-label=true"
 )
 
-var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
+var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
 	var virtClient kubecli.KubevirtClient
 	var err error
 
@@ -97,7 +97,7 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			vmList = append(vmList, vm)
 			return vm
 		}
-		It("no optional arguments are passed to virtctl command", Label("virtctl-update"), func() {
+		FIt("no optional arguments are passed to virtctl command", Label("virtctl-update"), func() {
 			vmNeedsUpdateStopped := createVM(virtClient, machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
 			vmNeedsUpdateRunning := createVM(virtClient, machineTypeNeedsUpdate, util.NamespaceTestDefault, false, true)
 			vmNoUpdate := createVM(virtClient, machineTypeNoUpdate, util.NamespaceTestDefault, false, false)

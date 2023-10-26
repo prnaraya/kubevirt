@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
+	framework "k8s.io/client-go/tools/cache/testing"
 	"k8s.io/utils/pointer"
 	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -29,9 +30,13 @@ var _ = Describe("JobController", func() {
 	var vmInterface *kubecli.MockVirtualMachineInterface
 	var vmiInterface *kubecli.MockVirtualMachineInstanceInterface
 	var kubeClient *fake.Clientset
+	var vmInformer cache.SharedIndexInformer
 	var vmiInformer cache.SharedIndexInformer
+	var vmSource *framework.FakeControllerSource
+	var vmiSource *framework.FakeControllerSource
 	var mockQueue *testutils.MockWorkQueue
 	var controller *JobController
+	var stop chan struct{}
 	var err error
 
 	shouldExpectGetVM := func(vm *virtv1.VirtualMachine) {
@@ -81,11 +86,13 @@ var _ = Describe("JobController", func() {
 		})
 	}
 
-	addVmi := func(vmi *virtv1.VirtualMachineInstance) {
-		key, err := cache.MetaNamespaceKeyFunc(vmi)
+	addVm := func(vm *virtv1.VirtualMachine) {
+		key, err := cache.MetaNamespaceKeyFunc(vm)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
-
 		mockQueue.Add(key)
+	}
+
+	addVmi := func(vmi *virtv1.VirtualMachineInstance) {
 		err = vmiInformer.GetStore().Add(vmi)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 	}
@@ -109,17 +116,20 @@ var _ = Describe("JobController", func() {
 			vmInterface = kubecli.NewMockVirtualMachineInterface(ctrl)
 			vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 			kubeClient = fake.NewSimpleClientset()
+			stop = make(chan struct{})
 
+			vmInformer, _ = testutils.NewFakeInformerFor(&virtv1.VirtualMachine{})
 			vmiInformer, _ = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
 
-			controller, err = NewJobController(vmiInformer, virtClient)
+			controller, err = NewJobController(vmInformer, vmiInformer, virtClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			mockQueue = testutils.NewMockWorkQueue(controller.Queue)
 			controller.Queue = mockQueue
 
-			go controller.VmiInformer.Run(controller.ExitJob)
-			Expect(cache.WaitForCacheSync(controller.ExitJob, controller.VmiInformer.HasSynced)).To(BeTrue())
+			go controller.VmInformer.Run(stop)
+			go controller.VmiInformer.Run(stop)
+			Expect(cache.WaitForCacheSync(stop, controller.VmiInformer.HasSynced)).To(BeTrue())
 
 			virtClient.EXPECT().VirtualMachine(gomock.Any()).Return(vmInterface).AnyTimes()
 			virtClient.EXPECT().VirtualMachineInstance(gomock.Any()).Return(vmiInterface).AnyTimes()
@@ -129,6 +139,7 @@ var _ = Describe("JobController", func() {
 			It("should not remove `restart-vm-required` label from VM", func() {
 				vm = newVMWithRestartLabel(machineTypeNeedsUpdate)
 				vmi = newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
+				addVm(vm)
 				addVmi(vmi)
 
 				shouldExpectGetVM(vm)

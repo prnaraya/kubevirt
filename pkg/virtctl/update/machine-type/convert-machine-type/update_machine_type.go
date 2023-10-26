@@ -8,6 +8,9 @@ import (
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	k6tv1 "kubevirt.io/api/core/v1"
+	v1 "kubevirt.io/api/core/v1"
+
+	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 )
 
 // using these as consts allows us to easily modify the program to update as newer versions are released
@@ -43,81 +46,57 @@ func (c *JobController) patchMachineType(vm *k6tv1.VirtualMachine) error {
 	return err
 }
 
-func isMachineTypeUpdated(vm *k6tv1.VirtualMachine) bool {
-	if vm.Spec.Template.Spec.Domain.Machine != nil && vm.Spec.Template.Spec.Domain.Machine.Type != "q35" {
-		return false
+func isMachineTypeUpdated(obj interface{}) (bool, error) {
+	vm, ok := obj.(*v1.VirtualMachine)
+
+	if ok {
+		machine := vm.Spec.Template.Spec.Domain.Machine
+		matchesGlob := false
+		var err error
+
+		if machine != nil {
+			matchesGlob, err = matchMachineType(machine.Type)
+			if err != nil {
+				return false, err
+			}
+		}
+		return machine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
 	}
-	return true
+
+	vmi := obj.(*v1.VirtualMachineInstance)
+	specMachine := vmi.Spec.Domain.Machine
+	statusMachine := vmi.Status.Machine
+	if specMachine == nil || statusMachine == nil {
+		return false, fmt.Errorf("vmi machine type is not set properly")
+	}
+	matchesGlob, err := matchMachineType(statusMachine.Type)
+	if err != nil {
+		return false, err
+	}
+	return specMachine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
 }
 
-func (c *JobController) UpdateMachineTypes() error {
-	listOpts := &k8sv1.ListOptions{}
-	if LabelSelector != "" {
-		listOpts = &k8sv1.ListOptions{
-			LabelSelector: LabelSelector,
-		}
-	}
-	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), listOpts)
-
+func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) error {
+	err := c.patchMachineType(vm)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("VMList length: %d\n", len(vmList.Items))
-	for _, vm := range vmList.Items {
-
-		if *vm.Spec.Running {
-			vmi, err := c.VirtClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &k8sv1.GetOptions{})
+	if running {
+		// if force restart flag is set, restart running VMs immediately
+		// don't apply warning label to VMs being restarted
+		if RestartNow {
+			err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
 			if err != nil {
-				fmt.Println(err)
-				continue
+				return err
 			}
+		}
 
-			// check that VMI is in Running phase
-			if vmi.Status.Phase != k6tv1.Running {
-				continue
-			}
-
-			// for running VMs, check if machine type in VMI status matches glob
-			matchMachineType, err := path.Match(MachineTypeGlob, vmi.Status.Machine.Type)
-			if !matchMachineType {
-				if err != nil {
-					fmt.Println(err)
-				}
-				continue
-			}
-
-			c.patchMachineType(&vm)
-
-			// if force restart flag is set, restart running VMs immediately
-			// don't apply warning label to VMs being restarted
-			if RestartNow {
-				err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
-				if err != nil {
-					fmt.Println(err)
-				}
-				continue
-			}
-
-			// adding the warning label to the running VMs to indicate to the user
-			// they must manually be restarted
-			err = c.addWarningLabel(&vm)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-		} else {
-			// for stopped VMs, check if machine type in VM spec matches glob
-			matchMachineType, err := matchMachineType(vm.Spec.Template.Spec.Domain.Machine.Type)
-
-			if !matchMachineType {
-				if err != nil {
-					fmt.Println(err)
-				}
-				continue
-			}
-
-			c.patchMachineType(&vm)
+		// adding the warning label to the running VMs to indicate to the user
+		// they must manually be restarted
+		err = c.addWarningLabel(vm)
+		if err != nil {
+			return err
 		}
 	}
 	return nil

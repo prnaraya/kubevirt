@@ -48,9 +48,10 @@ func Run() {
 		os.Exit(1)
 	}
 
-	listWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
-	vmInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachine{}, 1*time.Hour, cache.Indexers{})
-	vmiInformer := cache.NewSharedIndexInformer(listWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
+	vmListWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachines", Namespace, fields.Everything())
+	vmInformer := cache.NewSharedIndexInformer(vmListWatcher, &k6tv1.VirtualMachine{}, 1*time.Hour, cache.Indexers{})
+	vmiListWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
+	vmiInformer := cache.NewSharedIndexInformer(vmiListWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
 
 	controller, err := NewJobController(vmInformer, vmiInformer, virtCli)
 	if err != nil {
@@ -59,18 +60,13 @@ func Run() {
 
 	go controller.run(controller.ExitJob)
 
-	err = controller.UpdateMachineTypes()
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// if no running VMs have been updated or need to be
-	// restarted by this point, job can terminate
-	numVmisPendingUpdate := controller.numVmisPendingUpdate()
-	fmt.Printf("checking num vmis after updateMachineTypes runs: %d\n", numVmisPendingUpdate)
-	if numVmisPendingUpdate <= 0 {
-		close(controller.ExitJob)
-	}
+	// // if no running VMs have been updated or need to be
+	// // restarted by this point, job can terminate
+	// numVmisPendingUpdate := controller.numVmisPendingUpdate()
+	// fmt.Printf("checking num vmis after updateMachineTypes runs: %d\n", numVmisPendingUpdate)
+	// if numVmisPendingUpdate <= 0 {
+	// 	close(controller.ExitJob)
+	// }
 
 	<-controller.ExitJob
 

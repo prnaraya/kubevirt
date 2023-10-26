@@ -3,7 +3,6 @@ package convertmachinetype
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,16 +36,8 @@ func NewJobController(
 	}
 
 	_, err := vmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.genericEventHandler,
-		UpdateFunc: func(_, newObj interface{}) { c.genericEventHandler(newObj) },
-		DeleteFunc: c.genericEventHandler,
-	})
-	if err != nil {
-		return nil, err
-	}
-	_, err = vmiInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.genericEventHandler,
-		DeleteFunc: c.genericEventHandler,
+		AddFunc:    c.vmHandler,
+		UpdateFunc: func(_, newObj interface{}) { c.vmHandler(newObj) },
 	})
 	if err != nil {
 		return nil, err
@@ -106,9 +97,8 @@ func (c *JobController) Execute() bool {
 	}
 
 	defer c.Queue.Done(key)
-	err := c.execute(key.(string))
 
-	if err != nil {
+	if err := c.execute(key.(string)); err != nil {
 		c.Queue.AddRateLimited(key)
 	} else {
 		c.Queue.Forget(key)
@@ -117,82 +107,80 @@ func (c *JobController) Execute() bool {
 	return true
 }
 
-func (c *JobController) execute(key string) error {
-	_, exists, err := c.VmiInformer.GetStore().GetByKey(key)
-	if err != nil {
-		return err
-	}
-
-	if !exists {
-		namespace, name := parseKey(key)
-		c.handleDeletedVmi(namespace, name)
-	}
-
-	return nil
-}
-
-func (c *JobController) genericEventHandler(obj interface{}) {
+func (c *JobController) vmHandler(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err == nil {
 		c.Queue.Add(key)
 	}
 }
 
-func (c *JobController) handleDeletedVmi(namespace, name string) {
-	// get VM from cache
-	vmKey := fmt.Sprintf("%s/%s", namespace, name)
-	obj, exists, err := c.VmInformer.GetStore().GetByKey(vmKey)
-	if !exists || err != nil {
-		fmt.Println(err)
-		return
-	}
-	vm := obj.(*k6tv1.VirtualMachine)
-	// check if VM has restart-vm-required label
-	if _, ok := vm.Labels["restart-vm-required"]; !ok {
-		fmt.Println("vm does not have restart label")
-		return
+func (c *JobController) execute(key string) error {
+	obj, exists, err := c.VmInformer.GetStore().GetByKey(key)
+	if err != nil || !exists {
+		return nil
 	}
 
-	// check that VM machine type is not outdated in the case that a VM
-	// has been restarted for a different reason before its machine type
-	// has been updated
-	updated := isMachineTypeUpdated(vm)
+	vm := obj.(*v1.VirtualMachine)
+
+	// check if VM is running
+	isRunning, err := vmIsRunning(vm)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return err
 	}
 
-	if !updated {
-		fmt.Println("vm not updated")
-		return
-	}
-
-	// isRunning, err := vmIsRunning(vm)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	return
-	// }
-
-	// if isRunning {
-	// 	obj, exists, err = c.VmiInformer.GetStore().GetByKey(vmKey)
-	// }
-
-	// remove warning label from VM
-	err = c.removeWarningLabel(vm)
+	// check if VM machine type was updated
+	updated, err := isMachineTypeUpdated(vm)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 
-	numVmisPendingUpdate := c.numVmisPendingUpdate()
-	fmt.Printf("checking num vmis after vmi is deleted: %d\n", numVmisPendingUpdate)
-	if numVmisPendingUpdate <= 0 {
-		close(c.ExitJob)
+	// update non-running VMs that require update
+	if !updated && !isRunning {
+		err = c.UpdateMachineType(vm, false)
+		return err
 	}
-}
 
-func parseKey(key string) (namespace, name string) {
-	keySubstrings := strings.Split(key, "/")
-	return keySubstrings[0], keySubstrings[1]
+	if isRunning {
+		// get VMI from cache
+		vmKey, err := cache.MetaNamespaceKeyFunc(vm)
+		if err != nil {
+			return err
+		}
+		obj, exists, err := c.VmiInformer.GetStore().GetByKey(vmKey)
+		if err != nil || !exists {
+			return err
+		}
+
+		vmi := obj.(*v1.VirtualMachineInstance)
+
+		// update VM machine type if it needs to be
+		if !updated {
+			err = c.UpdateMachineType(vm.DeepCopy(), true)
+			return err
+		}
+
+		// check if VMI machine type has been updated
+		updated, err = isMachineTypeUpdated(vmi)
+		if err != nil {
+			return err
+		}
+
+		if !updated {
+			fmt.Println("vmi machine type has not been updated")
+			return nil
+		}
+	}
+
+	// check if VM has restart-vm-required label before trying
+	// to remove it
+	if _, ok := vm.Labels["restart-vm-required"]; ok {
+		// remove warning label from VM
+		err = c.removeWarningLabel(vm)
+		return err
+	}
+
+	return nil
 }
 
 func vmIsRunning(vm *v1.VirtualMachine) (bool, error) {
