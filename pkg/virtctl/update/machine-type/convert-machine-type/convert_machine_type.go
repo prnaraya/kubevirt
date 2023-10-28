@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/tools/cache"
 	k6tv1 "kubevirt.io/api/core/v1"
@@ -39,7 +40,17 @@ func Run() {
 
 	selectorEnv, exists := os.LookupEnv("LABEL_SELECTOR")
 	if exists {
-		LabelSelector = selectorEnv
+		ls, err := metav1.ParseToLabelSelector(selectorEnv)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		LabelSelector, err = metav1.LabelSelectorAsSelector(ls)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 	}
 
 	// set up JobController
@@ -59,17 +70,7 @@ func Run() {
 	}
 
 	go controller.run(controller.ExitJob)
-
-	// // if no running VMs have been updated or need to be
-	// // restarted by this point, job can terminate
-	// numVmisPendingUpdate := controller.numVmisPendingUpdate()
-	// fmt.Printf("checking num vmis after updateMachineTypes runs: %d\n", numVmisPendingUpdate)
-	// if numVmisPendingUpdate <= 0 {
-	// 	close(controller.ExitJob)
-	// }
-
 	<-controller.ExitJob
-
 	os.Exit(0)
 }
 

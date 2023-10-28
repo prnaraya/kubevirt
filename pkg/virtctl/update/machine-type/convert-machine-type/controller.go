@@ -6,6 +6,7 @@ import (
 	"time"
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -86,7 +87,9 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 
 func (c *JobController) runWorker() {
 	for c.Execute() {
-
+		if c.numVmisPendingUpdate() <= 0 {
+			close(c.ExitJob)
+		}
 	}
 }
 
@@ -121,6 +124,15 @@ func (c *JobController) execute(key string) error {
 	}
 
 	vm := obj.(*v1.VirtualMachine)
+
+	// we only care if the VM has the specified namespace and label(s)
+	if vm.Namespace != Namespace {
+		return nil
+	}
+
+	if !LabelSelector.Matches(labels.Set(vm.Labels)) {
+		return nil
+	}
 
 	// check if VM is running
 	isRunning, err := vmIsRunning(vm)

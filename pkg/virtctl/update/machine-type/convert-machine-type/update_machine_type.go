@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path"
 
-	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	k6tv1 "kubevirt.io/api/core/v1"
 	v1 "kubevirt.io/api/core/v1"
 
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
@@ -19,11 +19,9 @@ import (
 var (
 	// machine type(s) which should be updated
 	MachineTypeGlob = ""
-
+	LabelSelector   labels.Selector
 	// by default, update machine type across all namespaces
-	Namespace     = k8sv1.NamespaceAll
-	LabelSelector = ""
-
+	Namespace = metav1.NamespaceAll
 	// by default, should require manual restarting of VMIs
 	RestartNow = false
 )
@@ -37,12 +35,12 @@ func matchMachineType(machineType string) (bool, error) {
 	return true, nil
 }
 
-func (c *JobController) patchMachineType(vm *k6tv1.VirtualMachine) error {
+func (c *JobController) patchMachineType(vm *v1.VirtualMachine) error {
 	// removing the machine type field from the VM spec reverts it to
 	// the default machine type of the VM's arch
 	updateMachineType := `[{"op": "remove", "path": "/spec/template/spec/domain/machine"}]`
 
-	_, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(updateMachineType), &k8sv1.PatchOptions{})
+	_, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(updateMachineType), &metav1.PatchOptions{})
 	return err
 }
 
@@ -86,7 +84,7 @@ func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) e
 		// if force restart flag is set, restart running VMs immediately
 		// don't apply warning label to VMs being restarted
 		if RestartNow {
-			err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &k6tv1.RestartOptions{})
+			err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &v1.RestartOptions{})
 			if err != nil {
 				return err
 			}
@@ -102,9 +100,9 @@ func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) e
 	return nil
 }
 
-func (c *JobController) addWarningLabel(vm *k6tv1.VirtualMachine) error {
+func (c *JobController) addWarningLabel(vm *v1.VirtualMachine) error {
 	addLabel := `{"metadata":{"labels":{"restart-vm-required":""}}}`
 
-	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(addLabel), &k8sv1.PatchOptions{})
+	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(addLabel), &metav1.PatchOptions{})
 	return err
 }
