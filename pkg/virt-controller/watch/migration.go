@@ -524,12 +524,20 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 	return nil
 }
 
-func (c *MigrationController) processMigrationPhase(migration, migrationCopy *virtv1.VirtualMachineInstanceMigration, pod, attachmentPod *k8sv1.Pod, podExists, attachmentPodExists bool, conditionManager *controller.VirtualMachineInstanceMigrationConditionManager, vmiConditionManager *controller.VirtualMachineInstanceConditionManager, vmi *virtv1.VirtualMachineInstance, syncError error) (*virtv1.VirtualMachineInstanceMigration, error) {
+func (c *MigrationController) processMigrationPhase(
+	migration, migrationCopy *virtv1.VirtualMachineInstanceMigration,
+	pod, attachmentPod *k8sv1.Pod,
+	podExists, attachmentPodExists bool,
+	conditionManager *controller.VirtualMachineInstanceMigrationConditionManager,
+	vmiConditionManager *controller.VirtualMachineInstanceConditionManager,
+	vmi *virtv1.VirtualMachineInstance,
+	syncError error,
+) (*virtv1.VirtualMachineInstanceMigration, error) {
 	switch migration.Status.Phase {
 	case virtv1.MigrationPhaseUnset:
 		canMigrate, err := c.canMigrateVMI(migration, vmi)
 		if err != nil {
-			return migrationCopy, err
+			return nil, err
 		}
 
 		if canMigrate {
@@ -543,7 +551,11 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 		}
 	case virtv1.MigrationPending:
 		if podExists {
-			if !controller.VMIHasHotplugVolumes(vmi) || attachmentPodExists {
+			if controller.VMIHasHotplugVolumes(vmi) {
+				if attachmentPodExists {
+					migrationCopy.Status.Phase = virtv1.MigrationScheduling
+				}
+			} else {
 				migrationCopy.Status.Phase = virtv1.MigrationScheduling
 			}
 		} else if syncError != nil && strings.Contains(syncError.Error(), "exceeded quota") && !conditionManager.HasCondition(migration, virtv1.VirtualMachineInstanceMigrationRejectedByResourceQuota) {
@@ -562,11 +574,11 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 			if controller.VMIHasHotplugVolumes(vmi) {
 				if attachmentPodExists && isPodReady(attachmentPod) {
 					log.Log.Object(migration).Infof("Attachment pod %s for vmi %s/%s is ready", attachmentPod.Name, vmi.Namespace, vmi.Name)
-				} else {
-					break
+					migrationCopy.Status.Phase = virtv1.MigrationScheduled
 				}
+			} else {
+				migrationCopy.Status.Phase = virtv1.MigrationScheduled
 			}
-			migrationCopy.Status.Phase = virtv1.MigrationScheduled
 		}
 	case virtv1.MigrationScheduled:
 		if vmi.Status.MigrationState != nil &&
@@ -592,7 +604,7 @@ func (c *MigrationController) processMigrationPhase(migration, migrationCopy *vi
 
 			_, err := c.clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.JSONPatchType, []byte(patchOps), v1.PatchOptions{})
 			if err != nil {
-				return migrationCopy, err
+				return nil, err
 			}
 		}
 
