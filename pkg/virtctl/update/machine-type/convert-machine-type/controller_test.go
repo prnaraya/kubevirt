@@ -15,7 +15,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
-	framework "k8s.io/client-go/tools/cache/testing"
+
+	//	framework "k8s.io/client-go/tools/cache/testing"
 	"k8s.io/utils/pointer"
 	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -32,8 +33,8 @@ var _ = Describe("JobController", func() {
 	var kubeClient *fake.Clientset
 	var vmInformer cache.SharedIndexInformer
 	var vmiInformer cache.SharedIndexInformer
-	var vmSource *framework.FakeControllerSource
-	var vmiSource *framework.FakeControllerSource
+	// var vmSource *framework.FakeControllerSource
+	// var vmiSource *framework.FakeControllerSource
 	var mockQueue *testutils.MockWorkQueue
 	var controller *JobController
 	var stop chan struct{}
@@ -202,4 +203,33 @@ func newVMWithRestartLabel(machineType string) *virtv1.VirtualMachine {
 	}
 
 	return testVM
+}
+
+func newVMIWithMachineType(machineType string, name string) *virtv1.VirtualMachineInstance {
+	statusMachineType := machineType
+	if machineType == "q35" {
+		statusMachineType = "pc-q35-rhel8.2.0"
+	}
+
+	testvmi := &virtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: metav1.NamespaceDefault,
+		},
+		Spec: virtv1.VirtualMachineInstanceSpec{
+			Domain: virtv1.DomainSpec{
+				Machine: &virtv1.Machine{
+					Type: machineType,
+				},
+			},
+		},
+		Status: virtv1.VirtualMachineInstanceStatus{
+			Machine: &virtv1.Machine{
+				Type: statusMachineType,
+			},
+			Phase: virtv1.Running,
+		},
+	}
+
+	return testvmi
 }

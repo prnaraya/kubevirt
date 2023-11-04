@@ -84,18 +84,12 @@ func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) e
 		// if force restart flag is set, restart running VMs immediately
 		// don't apply warning label to VMs being restarted
 		if RestartNow {
-			err = c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &v1.RestartOptions{})
-			if err != nil {
-				return err
-			}
+			return c.VirtClient.VirtualMachine(vm.Namespace).Restart(context.Background(), vm.Name, &v1.RestartOptions{})
 		}
 
 		// adding the warning label to the running VMs to indicate to the user
 		// they must manually be restarted
-		err = c.addWarningLabel(vm)
-		if err != nil {
-			return err
-		}
+		return c.addWarningLabel(vm)
 	}
 	return nil
 }

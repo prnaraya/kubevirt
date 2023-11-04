@@ -57,16 +57,39 @@ func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
 	return nil
 }
 
-func (c *JobController) numVmisPendingUpdate() int {
-	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{
-		LabelSelector: "restart-vm-required=",
-	})
+func (c *JobController) exitJob() {
+	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{})
 	if err != nil {
 		fmt.Println(err)
-		return -1
+		return
 	}
 
-	return len(vmList.Items)
+	// no VMs exist
+	if vmList.Items == nil || len(vmList.Items) == 0 {
+		close(c.ExitJob)
+		return
+	}
+
+	outdatedVms := 0
+	vmsPendingRestart := 0
+
+	for _, vm := range vmList.Items {
+		updated, err := isMachineTypeUpdated(vm)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		if !updated {
+			outdatedVms++
+		} else if _, ok := vm.Labels["restart-vm-required"]; ok {
+			vmsPendingRestart++
+		}
+	}
+
+	if outdatedVms == 0 && vmsPendingRestart == 0 {
+		close(c.ExitJob)
+	}
 }
 
 func (c *JobController) run(stopCh <-chan struct{}) {
@@ -87,9 +110,6 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 
 func (c *JobController) runWorker() {
 	for c.Execute() {
-		if c.numVmisPendingUpdate() <= 0 {
-			close(c.ExitJob)
-		}
 	}
 }
 
@@ -126,11 +146,11 @@ func (c *JobController) execute(key string) error {
 	vm := obj.(*v1.VirtualMachine)
 
 	// we only care if the VM has the specified namespace and label(s)
-	if vm.Namespace != Namespace {
+	if Namespace != k8sv1.NamespaceAll && vm.Namespace != Namespace {
 		return nil
 	}
 
-	if !LabelSelector.Matches(labels.Set(vm.Labels)) {
+	if LabelSelector != nil && !LabelSelector.Matches(labels.Set(vm.Labels)) {
 		return nil
 	}
 
@@ -191,6 +211,8 @@ func (c *JobController) execute(key string) error {
 		err = c.removeWarningLabel(vm)
 		return err
 	}
+
+	c.exitJob()
 
 	return nil
 }
