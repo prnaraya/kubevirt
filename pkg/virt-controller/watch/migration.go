@@ -410,7 +410,6 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 	var pod *k8sv1.Pod = nil
 	var attachmentPod *k8sv1.Pod = nil
 	conditionManager := controller.NewVirtualMachineInstanceMigrationConditionManager()
-	vmiConditionManager := controller.NewVirtualMachineInstanceConditionManager()
 	migrationCopy := migration.DeepCopy()
 
 	podExists, attachmentPodExists := len(pods) > 0, false
@@ -500,7 +499,7 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 		log.Log.Object(migration).Errorf("target attachment pod %s/%s shutdown during migration", attachmentPod.Namespace, attachmentPod.Name)
 	} else {
 		var err error
-		migrationCopy, err = c.processMigrationPhase(migration, migrationCopy, pod, attachmentPod, podExists, attachmentPodExists, conditionManager, vmiConditionManager, vmi, syncError)
+		migrationCopy, err = c.processMigrationPhase(migration, migrationCopy, pod, attachmentPod, vmi, syncError)
 		if err != nil {
 			return err
 		}
@@ -527,12 +526,11 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 func (c *MigrationController) processMigrationPhase(
 	migration, migrationCopy *virtv1.VirtualMachineInstanceMigration,
 	pod, attachmentPod *k8sv1.Pod,
-	podExists, attachmentPodExists bool,
-	conditionManager *controller.VirtualMachineInstanceMigrationConditionManager,
-	vmiConditionManager *controller.VirtualMachineInstanceConditionManager,
 	vmi *virtv1.VirtualMachineInstance,
 	syncError error,
 ) (*virtv1.VirtualMachineInstanceMigration, error) {
+	conditionManager := controller.NewVirtualMachineInstanceMigrationConditionManager()
+	vmiConditionManager := controller.NewVirtualMachineInstanceConditionManager()
 	switch migration.Status.Phase {
 	case virtv1.MigrationPhaseUnset:
 		canMigrate, err := c.canMigrateVMI(migration, vmi)
@@ -550,9 +548,9 @@ func (c *MigrationController) processMigrationPhase(
 			log.Log.Object(migration).Error("Migration object ont eligible for migration because another job is in progress")
 		}
 	case virtv1.MigrationPending:
-		if podExists {
+		if pod != nil {
 			if controller.VMIHasHotplugVolumes(vmi) {
-				if attachmentPodExists {
+				if attachmentPod != nil {
 					migrationCopy.Status.Phase = virtv1.MigrationScheduling
 				}
 			} else {
@@ -572,7 +570,7 @@ func (c *MigrationController) processMigrationPhase(
 		}
 		if isPodReady(pod) {
 			if controller.VMIHasHotplugVolumes(vmi) {
-				if attachmentPodExists && isPodReady(attachmentPod) {
+				if attachmentPod != nil && isPodReady(attachmentPod) {
 					log.Log.Object(migration).Infof("Attachment pod %s for vmi %s/%s is ready", attachmentPod.Name, vmi.Namespace, vmi.Name)
 					migrationCopy.Status.Phase = virtv1.MigrationScheduled
 				}
