@@ -45,10 +45,9 @@ func (c *JobController) patchMachineType(vm *v1.VirtualMachine) error {
 }
 
 func isMachineTypeUpdated(obj interface{}) (bool, error) {
-	vm, ok := obj.(*v1.VirtualMachine)
-
-	if ok {
-		machine := vm.Spec.Template.Spec.Domain.Machine
+	switch obj := obj.(type) {
+	case *v1.VirtualMachine:
+		machine := obj.Spec.Template.Spec.Domain.Machine
 		matchesGlob := false
 		var err error
 
@@ -59,19 +58,20 @@ func isMachineTypeUpdated(obj interface{}) (bool, error) {
 			}
 		}
 		return machine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
+	case *v1.VirtualMachineInstance:
+		specMachine := obj.Spec.Domain.Machine
+		statusMachine := obj.Status.Machine
+		if specMachine == nil || statusMachine == nil {
+			return false, fmt.Errorf("vmi machine type is not set properly")
+		}
+		matchesGlob, err := matchMachineType(statusMachine.Type)
+		if err != nil {
+			return false, err
+		}
+		return specMachine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
+	default:
+		return false, fmt.Errorf("unknown object found")
 	}
-
-	vmi := obj.(*v1.VirtualMachineInstance)
-	specMachine := vmi.Spec.Domain.Machine
-	statusMachine := vmi.Status.Machine
-	if specMachine == nil || statusMachine == nil {
-		return false, fmt.Errorf("vmi machine type is not set properly")
-	}
-	matchesGlob, err := matchMachineType(statusMachine.Type)
-	if err != nil {
-		return false, err
-	}
-	return specMachine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
 }
 
 func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) error {
@@ -89,14 +89,12 @@ func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) e
 
 		// adding the warning label to the running VMs to indicate to the user
 		// they must manually be restarted
-		return c.addWarningLabel(vm)
+		return c.markVMRestartRequired(vm, "true")
 	}
 	return nil
 }
 
-func (c *JobController) addWarningLabel(vm *v1.VirtualMachine) error {
-	addLabel := `{"metadata":{"labels":{"restart-vm-required":""}}}`
-
-	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.MergePatchType, []byte(addLabel), &metav1.PatchOptions{})
-	return err
+func (c *JobController) markVMRestartRequired(vm *v1.VirtualMachine, required string) error {
+	patchString := fmt.Sprintf(`{ "op": "add", "path": "/status/machineTypeRestartRequired", "value": "%s"}`, required)
+	return c.statusUpdater.PatchStatus(vm, types.JSONPatchType, []byte(patchString), &metav1.PatchOptions{})
 }

@@ -7,21 +7,21 @@ import (
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	k6tv1 "kubevirt.io/api/core/v1"
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+	"kubevirt.io/kubevirt/pkg/util/status"
 )
 
 type JobController struct {
-	VmInformer  cache.SharedIndexInformer
-	VmiInformer cache.SharedIndexInformer
-	VirtClient  kubecli.KubevirtClient
-	Queue       workqueue.RateLimitingInterface
-	ExitJob     chan struct{}
+	VmInformer    cache.SharedIndexInformer
+	VmiInformer   cache.SharedIndexInformer
+	VirtClient    kubecli.KubevirtClient
+	Queue         workqueue.RateLimitingInterface
+	statusUpdater *status.VMStatusUpdater
+	ExitJob       chan struct{}
 }
 
 func NewJobController(
@@ -29,11 +29,12 @@ func NewJobController(
 	virtClient kubecli.KubevirtClient,
 ) (*JobController, error) {
 	c := &JobController{
-		VmInformer:  vmInformer,
-		VmiInformer: vmiInformer,
-		VirtClient:  virtClient,
-		Queue:       workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		ExitJob:     make(chan struct{}),
+		VmInformer:    vmInformer,
+		VmiInformer:   vmiInformer,
+		VirtClient:    virtClient,
+		Queue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		statusUpdater: status.NewVMStatusUpdater(virtClient),
+		ExitJob:       make(chan struct{}),
 	}
 
 	_, err := vmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -45,16 +46,6 @@ func NewJobController(
 	}
 
 	return c, nil
-}
-
-func (c *JobController) removeWarningLabel(vm *k6tv1.VirtualMachine) error {
-	removeLabel := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
-	vm, err := c.VirtClient.VirtualMachine(vm.Namespace).Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(removeLabel), &k8sv1.PatchOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (c *JobController) exitJob() {
@@ -82,7 +73,7 @@ func (c *JobController) exitJob() {
 
 		if !updated {
 			outdatedVms++
-		} else if _, ok := vm.Labels["restart-vm-required"]; ok {
+		} else if vm.Status.MachineTypeRestartRequired {
 			vmsPendingRestart++
 		}
 	}
@@ -203,17 +194,13 @@ func (c *JobController) execute(key string) error {
 			return nil
 		}
 	}
-
-	// check if VM has restart-vm-required label before trying
-	// to remove it
-	if _, ok := vm.Labels["restart-vm-required"]; ok {
-		// remove warning label from VM
-		err = c.removeWarningLabel(vm)
+	// mark MachineTypeRestartRequired as false
+	err = c.markVMRestartRequired(vm, "false")
+	if err != nil {
 		return err
 	}
 
 	c.exitJob()
-
 	return nil
 }
 
