@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	backendstorage "kubevirt.io/kubevirt/pkg/storage/backend-storage"
+	"kubevirt.io/kubevirt/pkg/util"
 
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 
@@ -1429,7 +1430,7 @@ func validateGuestMemoryLimit(field *k8sfield.Path, spec *v1.VirtualMachineInsta
 				),
 				Field: field.Child("domain", "memory", "guest").String(),
 			})
-		} else if request < guest && spec.Domain.Devices.GPUs != nil && len(spec.Domain.Devices.GPUs) != 0 {
+		} else if request < guest && util.IsVFIOVMI(spec) {
 			causes = append(causes, metav1.StatusCause{
 				Type: metav1.CauseTypeFieldValueInvalid,
 				Message: fmt.Sprintf("%s '%s' must be equal to or less than the memory requested %s '%s' when VM requests VFIO device",
