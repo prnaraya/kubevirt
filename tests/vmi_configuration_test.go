@@ -46,6 +46,7 @@ import (
 	k8sv1 "k8s.io/api/core/v1"
 	kubev1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -561,6 +562,22 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(vmi.Spec.Domain.Resources.Requests.Memory().String()).To(Equal("2048M"))
 			})
+
+			It("should ignore memory-overcommit if it results in guest memory > requests and VFIO device is requested", func() {
+				tests.EnableFeatureGate(virtconfig.GPUGate)
+				vmi := libvmi.New()
+				guestMemory := resource.MustParse("4096M")
+				vmi.Spec.Domain.Memory = &v1.Memory{Guest: &guestMemory}
+				vmi.Spec.Domain.Resources = v1.ResourceRequirements{}
+				vmi.Spec.Domain.Devices.GPUs = []v1.GPU{
+					{
+						Name:       "gpu1",
+						DeviceName: "random.com/gpu",
+					},
+				}
+				runningVMI := tests.RunVMI(vmi, 30)
+				Expect(runningVMI.Spec.Domain.Resources.Requests.Memory().String()).To(Equal("4096M"))
+			})
 		})
 
 		Context("with BIOS bootloader method and no disk", func() {
@@ -739,6 +756,27 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 					&expect.BExp{R: console.RetValue("225")},
 				}, 10)).To(Succeed())
 
+			})
+		})
+
+		Context("[Serial][rfe_id:140][crit:medium][vendor:cnv-qe@redhat.com][level:component]with guest memory greater than requested memory and VFIO device present", Serial, func() {
+			It("should fail VMI creation", func() {
+				tests.EnableFeatureGate(virtconfig.GPUGate)
+				vmi := libvmi.NewCirros()
+				guestMemory := resource.MustParse("512Mi")
+				vmi.Spec.Domain.Memory = &v1.Memory{
+					Guest: &guestMemory,
+				}
+				vmi.Spec.Domain.Devices.GPUs = []v1.GPU{
+					{
+						Name:       "gpu1",
+						DeviceName: "random.com/gpu",
+					},
+				}
+
+				By("Starting a VirtualMachineInstance")
+				_, err := virtClient.VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vmi)
+				Expect(errors.HasStatusCause(err, metav1.CauseTypeFieldValueInvalid)).To(BeTrue())
 			})
 		})
 
