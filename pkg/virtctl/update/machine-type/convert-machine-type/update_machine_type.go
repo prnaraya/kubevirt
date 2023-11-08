@@ -13,9 +13,6 @@ import (
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 )
 
-// using these as consts allows us to easily modify the program to update as newer versions are released
-// we generally want to be updating the machine types to the most recent version
-
 var (
 	// machine type(s) which should be updated
 	MachineTypeGlob = ""

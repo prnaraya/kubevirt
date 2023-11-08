@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+
 	"kubevirt.io/kubevirt/pkg/util/status"
 )
 
@@ -96,6 +97,11 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 		return
 	}
 
+	vmKeys := c.VmInformer.GetStore().ListKeys()
+	for _, k := range vmKeys {
+		c.Queue.Add(k)
+	}
+
 	wait.Until(c.runWorker, time.Second, stopCh)
 }
 
@@ -155,12 +161,16 @@ func (c *JobController) execute(key string) error {
 	// check if VM machine type was updated
 	updated, err := isMachineTypeUpdated(vm)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
-	// update non-running VMs that require update
+	// update stopped VMs that require update
 	if !updated && !isRunning {
 		err = c.UpdateMachineType(vm, false)
+		if err != nil {
+			fmt.Println(err)
+		}
 		return err
 	}
 
@@ -168,10 +178,12 @@ func (c *JobController) execute(key string) error {
 		// get VMI from cache
 		vmKey, err := cache.MetaNamespaceKeyFunc(vm)
 		if err != nil {
+			fmt.Println(err)
 			return err
 		}
 		obj, exists, err := c.VmiInformer.GetStore().GetByKey(vmKey)
 		if err != nil || !exists {
+			fmt.Println(err)
 			return err
 		}
 
@@ -180,12 +192,16 @@ func (c *JobController) execute(key string) error {
 		// update VM machine type if it needs to be
 		if !updated {
 			err = c.UpdateMachineType(vm.DeepCopy(), true)
+			if err != nil {
+				fmt.Println(err)
+			}
 			return err
 		}
 
 		// check if VMI machine type has been updated
 		updated, err = isMachineTypeUpdated(vmi)
 		if err != nil {
+			fmt.Println(err)
 			return err
 		}
 
@@ -197,6 +213,7 @@ func (c *JobController) execute(key string) error {
 	// mark MachineTypeRestartRequired as false
 	err = c.markVMRestartRequired(vm, "false")
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
