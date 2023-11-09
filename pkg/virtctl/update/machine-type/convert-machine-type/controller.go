@@ -7,6 +7,7 @@ import (
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -50,7 +51,9 @@ func NewJobController(
 }
 
 func (c *JobController) exitJob() {
-	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{})
+	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{
+		LabelSelector: LabelSelector.String(),
+	})
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -107,6 +110,7 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 
 func (c *JobController) runWorker() {
 	for c.Execute() {
+		c.exitJob()
 	}
 }
 
@@ -191,7 +195,7 @@ func (c *JobController) execute(key string) error {
 
 		// update VM machine type if it needs to be
 		if !updated {
-			err = c.UpdateMachineType(vm.DeepCopy(), true)
+			err = c.UpdateMachineType(vm, true)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -211,13 +215,13 @@ func (c *JobController) execute(key string) error {
 		}
 	}
 	// mark MachineTypeRestartRequired as false
-	err = c.markVMRestartRequired(vm, "false")
+	patchString := fmt.Sprintf(`[{ "op": "replace", "path": "/status/machineTypeRestartRequired", "value": %t }]`, false)
+	err = c.statusUpdater.PatchStatus(vm, types.JSONPatchType, []byte(patchString), &k8sv1.PatchOptions{})
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
 
-	c.exitJob()
 	return nil
 }
 
@@ -227,10 +231,9 @@ func vmIsRunning(vm *v1.VirtualMachine) (bool, error) {
 		return false, err
 	}
 
-	switch runStrategy {
-	case v1.RunStrategyHalted, v1.RunStrategyManual, v1.RunStrategyOnce:
-		return false, nil
-	default:
+	if runStrategy == v1.RunStrategyAlways {
 		return true, nil
 	}
+
+	return false, nil
 }

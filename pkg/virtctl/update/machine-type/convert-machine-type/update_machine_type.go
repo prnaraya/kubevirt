@@ -86,12 +86,8 @@ func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) e
 
 		// adding the warning label to the running VMs to indicate to the user
 		// they must manually be restarted
-		return c.markVMRestartRequired(vm, "true")
+		patchString := fmt.Sprintf(`[{ "op": "add", "path": "/status/machineTypeRestartRequired", "value": %t }]`, true)
+		return c.statusUpdater.PatchStatus(vm, types.JSONPatchType, []byte(patchString), &metav1.PatchOptions{})
 	}
 	return nil
-}
-
-func (c *JobController) markVMRestartRequired(vm *v1.VirtualMachine, required string) error {
-	patchString := fmt.Sprintf(`{ "op": "add", "path": "/status/machineTypeRestartRequired", "value": "%s"}`, required)
-	return c.statusUpdater.PatchStatus(vm, types.JSONPatchType, []byte(patchString), &metav1.PatchOptions{})
 }

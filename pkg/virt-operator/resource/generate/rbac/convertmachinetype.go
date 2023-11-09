@@ -105,6 +105,17 @@ func newConvertMachineTypeClusterRole() *rbacv1.ClusterRole {
 					GroupName,
 				},
 				Resources: []string{
+					"virtualmachines/status",
+				},
+				Verbs: []string{
+					"patch",
+				},
+			},
+			{
+				APIGroups: []string{
+					GroupName,
+				},
+				Resources: []string{
 					"kubevirts",
 				},
 				Verbs: []string{

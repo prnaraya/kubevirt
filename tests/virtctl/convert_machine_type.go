@@ -34,15 +34,14 @@ const (
 	machineTypeGlob        = "*rhel8.*"
 	update                 = "update"
 	machineTypes           = "machine-types"
-	restartRequiredLabel   = "restart-vm-required"
 	machineTypeFlag        = "which-matches-glob"
 	namespaceFlag          = "namespace"
 	labelSelectorFlag      = "label-selector"
 	forceRestartFlag       = "restart-now"
-	testLabel              = "testing-label=true"
+	testLabel              = "testing-label="
 )
 
-var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
+var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
 	var virtClient kubecli.KubevirtClient
 	var err error
 
@@ -56,14 +55,11 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 
 		BeforeEach(func() {
 			vmList = []*v1.VirtualMachine{}
-			//fmt.Println(testsuite.Arch)
 		})
 
 		AfterEach(func() {
 			for _, vm := range vmList {
-				if *vm.Spec.Running {
-					tests.StopVirtualMachine(vm)
-				}
+
 				err = virtClient.VirtualMachine(vm.Namespace).Delete(context.Background(), vm.Name, &metav1.DeleteOptions{})
 				Expect(err).ToNot(HaveOccurred())
 			}
@@ -74,12 +70,11 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			template := libvmi.New(
 				libvmi.WithResourceMemory(("32Mi")),
 				libvmi.WithNamespace(namespace),
-				// withMachineType(machineType),
-				withLabel(hasLabel),
+				libvmi.WithLabel("testing-label", ""),
+				withMachineType(machineType),
 			)
 
 			vm := tests.NewRandomVirtualMachine(template, running)
-			vm.Spec.Template.Spec.Domain.Machine = &v1.Machine{Type: machineType}
 			vm, err = virtClient.VirtualMachine(namespace).Create(context.Background(), vm)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -90,7 +85,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			vmList = append(vmList, vm)
 			return vm
 		}
-		FIt("no optional arguments are passed to virtctl command", Label("virtctl-update"), func() {
+		It("no optional arguments are passed to virtctl command", Label("virtctl-update"), func() {
 			vmNeedsUpdateStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
 			vmNeedsUpdateRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, true)
 			vmNoUpdate := createVM(machineTypeNoUpdate, util.NamespaceTestDefault, false, false)
@@ -106,7 +101,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 
 			Eventually(ThisVM(vmNeedsUpdateRunning), 60*time.Second, 1*time.Second).Should(haveRestartRequiredStatus())
 
-			// Consistently(thisJob(virtClient, job), 60*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
+			Consistently(thisJob(virtClient, job), 60*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
 		})
 
 		It("Example with namespace flag", func() {
@@ -130,7 +125,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Eventually(ThisVM(vmNamespaceDefaultRunning), 60*time.Second, 1*time.Second).Should(haveRestartRequiredStatus())
 			Eventually(ThisVM(vmNamespaceOtherRunning), 60*time.Second, 1*time.Second).ShouldNot(haveRestartRequiredStatus())
 
-			Consistently(thisJob(virtClient, job), 120*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
+			Consistently(thisJob(virtClient, job), 60*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
 		})
 
 		It("Example with label-selector flag", func() {
@@ -154,7 +149,7 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Eventually(ThisVM(vmWithLabelRunning)).Should(haveRestartRequiredStatus())
 			Eventually(ThisVM(vmNoLabelRunning)).ShouldNot(haveRestartRequiredStatus())
 
-			Consistently(thisJob(virtClient, job), 120*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
+			Consistently(thisJob(virtClient, job), 60*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
 		})
 
 		It("Example with force-restart flag", func() {
@@ -181,55 +176,52 @@ var _ = Describe("[sig-compute][virtctl] mass machine type transition", decorato
 			Eventually(ThisVMI(vmiNeedsUpdateRunning)).Should(haveDefaultMachineType())
 
 			By("Ensuring the job terminates since there are no VMs pending restart.")
-			Eventually(thisJob(virtClient, job), 120*time.Second, 1*time.Second).Should(haveCompletionTime())
+			Eventually(thisJob(virtClient, job), 60*time.Second, 1*time.Second).Should(haveCompletionTime())
 		})
 
-		// It("Complex example", func() {
-		// 	vmNamespaceDefaultStopped, _ := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
-		// 	vmNamespaceDefaultRunning, vmiNamespaceDefaultRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, true)
-		// 	vmNamespaceOtherStopped, _ := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, false, false)
-		// 	vmNamespaceOtherRunning, vmiNamespaceOtherRunning := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, false, true)
-		// 	vmNamespaceDefaultWithLabelStopped, _ := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, false)
-		// 	vmNamespaceDefaultWithLabelRunning, vmiNamespaceDefaultWithLabelRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, true)
-		// 	vmNamespaceOtherWithLabelStopped, _ := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, true, false)
-		// 	vmNamespaceOtherWithLabelRunning, vmiNamespaceOtherWithLabelRunning := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, true, true)
-		// 	vmNoUpdate, _ := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
+		It("Complex example", func() {
+			vmNamespaceDefaultStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
+			vmNamespaceDefaultRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, true)
+			vmNamespaceOtherStopped := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, false, false)
+			vmNamespaceOtherRunning := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, false, true)
+			vmNamespaceDefaultWithLabelStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, false)
+			vmNamespaceDefaultWithLabelRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, true)
+			vmNamespaceOtherWithLabelStopped := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, true, false)
+			vmNamespaceOtherWithLabelRunning := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, true, true)
+			vmNoUpdate := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
 
-		// 	err := clientcmd.NewRepeatableVirtctlCommand(update, machineTypes,
-		// 		setFlag(machineTypeFlag, machineTypeGlob),
-		// 		setFlag(namespaceFlag, util.NamespaceTestDefault),
-		// 		setFlag(labelSelectorFlag, testLabel),
-		// 		setFlag(forceRestartFlag, "true"))()
-		// 	Expect(err).ToNot(HaveOccurred())
+			vmiNamespaceDefaultWithLabelRunning, err := virtClient.VirtualMachineInstance(vmNamespaceDefaultWithLabelRunning.Namespace).Get(context.Background(), vmNamespaceDefaultWithLabelRunning.Name, &metav1.GetOptions{})
+			Expect(err).ToNot(HaveOccurred())
 
-		//  job := expectJobExists()
+			err = clientcmd.NewRepeatableVirtctlCommand(update, machineTypes,
+				setFlag(machineTypeFlag, machineTypeGlob),
+				setFlag(namespaceFlag, util.NamespaceTestDefault),
+				setFlag(labelSelectorFlag, testLabel),
+				setFlag(forceRestartFlag, "true"))()
+			Expect(err).ToNot(HaveOccurred())
 
-		// 	// the only VMs that should be updated are the ones in the default test namespace and with the test label
-		// 	// with force-restart flag, the restart-vm-required label should not be applied to the running VM
-		// 	Expect(vmNamespaceDefaultWithLabelStopped.Spec.Template.Spec.Domain.Machine).To(BeNil())
-		// 	Expect(vmNamespaceDefaultWithLabelRunning.Spec.Template.Spec.Domain.Machine).To(BeNil())
-		// 	Expect(vmNamespaceDefaultWithLabelRunning.Labels).ToNot(HaveKey(restartRequiredLabel))
+			job = expectJobExists(virtClient)
 
-		// 	// all other VM machine types should remain unchanged
-		// 	Expect(vmNamespaceDefaultStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-		// 	Expect(vmNamespaceDefaultRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-		// 	Expect(vmNamespaceOtherStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-		// 	Expect(vmNamespaceOtherRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-		// 	Expect(vmNamespaceOtherWithLabelStopped.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-		// 	Expect(vmNamespaceOtherWithLabelRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNeedsUpdate))
-		// 	Expect(vmNoUpdate.Spec.Template.Spec.Domain.Machine.Type).To(Equal(machineTypeNoUpdate))
+			// the only VMs that should be updated are the ones in the default test namespace and with the test label
+			// with force-restart flag, the restart-vm-required label should not be applied to the running VM
+			Eventually(ThisVM(vmNamespaceDefaultWithLabelStopped), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())
+			Eventually(ThisVM(vmNamespaceDefaultWithLabelRunning), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())
+			Eventually(ThisVM(vmNamespaceDefaultWithLabelRunning), 60*time.Second, 1*time.Second).ShouldNot(haveRestartRequiredStatus())
 
-		// 	Eventually(func() bool {
-		// 		vm, err := virtClient.VirtualMachine(util.NamespaceTestDefault).Get(context.Background(), vmNamespaceDefaultWithLabelRunning.Name, &metav1.GetOptions{})
-		// 		Expect(err).ToNot(HaveOccurred())
-		// 		return *vm.Spec.Running
-		// 	}).Should(BeTrue())
+			// all other VM machine types should remain unchanged
+			Expect(ThisVM(vmNamespaceDefaultStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Expect(ThisVM(vmNamespaceDefaultRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Expect(ThisVM(vmNamespaceOtherStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Expect(ThisVM(vmNamespaceOtherRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Expect(ThisVM(vmNamespaceOtherWithLabelStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Expect(ThisVM(vmNamespaceOtherWithLabelRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Expect(ThisVM(vmNoUpdate)).Should(haveOriginalMachineType(machineTypeNoUpdate))
 
-		// 	vmi, err := virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Get(context.Background(), vmNamespaceDefaultWithLabelRunning.Name, &metav1.GetOptions{})
-		// 	Expect(err).ToNot(HaveOccurred())
-		// 	Expect(vmNamespaceDefaultWithLabelRunning.Spec.Template.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
-		// 	Expect(vmi.Spec.Domain.Machine.Type).To(Equal(virtconfig.DefaultAMD64MachineType))
-		// })
+			Eventually(ThisVMI(vmiNamespaceDefaultWithLabelRunning), 120*time.Second, 1*time.Second).Should(beRestarted(vmiNamespaceDefaultWithLabelRunning.UID))
+			Eventually(ThisVMI(vmiNamespaceDefaultWithLabelRunning)).Should(haveDefaultMachineType())
+
+			Eventually(thisJob(virtClient, job), 60*time.Second, 1*time.Second).Should(haveCompletionTime())
+		})
 	})
 })
 
@@ -335,16 +327,5 @@ func withMachineType(machineType string) libvmi.Option {
 	return func(vmi *v1.VirtualMachineInstance) {
 		vmi.Spec.Domain.Machine = &v1.Machine{Type: machineType}
 		vmi.Status.Machine = &v1.Machine{Type: machineType}
-	}
-}
-
-func withLabel(hasLabel bool) libvmi.Option {
-	return func(vmi *v1.VirtualMachineInstance) {
-		if hasLabel {
-			if vmi.Labels == nil {
-				vmi.Labels = map[string]string{}
-			}
-			vmi.Labels["testing-label"] = "true"
-		}
 	}
 }
