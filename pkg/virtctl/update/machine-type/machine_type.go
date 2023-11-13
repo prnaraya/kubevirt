@@ -125,7 +125,7 @@ func generateMassMachineTypeTransitionJob() *batchv1.Job {
 									Value: namespaceFlag,
 								},
 								{
-									Name:  "FORCE_RESTART",
+									Name:  "RESTART_NOW",
 									Value: strconv.FormatBool(restartNowFlag),
 								},
 								{

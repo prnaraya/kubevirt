@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 	k6tv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -24,7 +24,7 @@ func Run() {
 	}
 	MachineTypeGlob = machineTypeEnv
 
-	restartEnv, exists := os.LookupEnv("FORCE_RESTART")
+	restartEnv, exists := os.LookupEnv("RESTART_NOW")
 	if exists {
 		RestartNow, err = strconv.ParseBool(restartEnv)
 		if err != nil {
@@ -38,15 +38,15 @@ func Run() {
 		Namespace = namespaceEnv
 	}
 
+	fmt.Println("Setting label selector")
 	selectorEnv, exists := os.LookupEnv("LABEL_SELECTOR")
 	if exists {
-		ls, err := metav1.ParseToLabelSelector(selectorEnv)
+		ls, err := labels.ConvertSelectorToLabelsMap(selectorEnv)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-
-		LabelSelector, err = metav1.LabelSelectorAsSelector(ls)
+		LabelSelector, err = ls.AsValidatedSelector()
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -60,8 +60,8 @@ func Run() {
 	}
 
 	vmListWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachines", Namespace, fields.Everything())
-	vmInformer := cache.NewSharedIndexInformer(vmListWatcher, &k6tv1.VirtualMachine{}, 1*time.Hour, cache.Indexers{})
 	vmiListWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
+	vmInformer := cache.NewSharedIndexInformer(vmListWatcher, &k6tv1.VirtualMachine{}, 1*time.Hour, cache.Indexers{})
 	vmiInformer := cache.NewSharedIndexInformer(vmiListWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
 
 	controller, err := NewJobController(vmInformer, vmiInformer, virtCli)

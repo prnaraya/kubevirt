@@ -40,23 +40,21 @@ var _ = Describe("JobController", func() {
 	var stop chan struct{}
 	var err error
 
-	shouldExpectGetVM := func(vm *virtv1.VirtualMachine) {
-		vmInterface.EXPECT().Get(context.Background(), vm.Name, &metav1.GetOptions{}).Return(vm, nil).Times(1)
-
-		kubeClient.Fake.PrependReactor("get", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
-			get, ok := action.(testing.GetAction)
-			Expect(ok).To(BeTrue())
-			Expect(get.GetNamespace()).To(Equal(metav1.NamespaceDefault))
-			Expect(get.GetName()).To(Equal(vm.Name))
-			return true, vm, nil
-		})
-	}
-
 	shouldExpectVMICreation := func(vmi *virtv1.VirtualMachineInstance) {
 		kubeClient.Fake.PrependReactor("create", "virtualmachineinstances", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
 			create, ok := action.(testing.CreateAction)
 			Expect(ok).To(BeTrue())
 			Expect(create.GetObject().(*virtv1.VirtualMachineInstance).Name).To(Equal(vmi.Name))
+
+			return true, create.GetObject(), nil
+		})
+	}
+
+	shouldExpectVMCreation := func(vm *virtv1.VirtualMachine) {
+		kubeClient.Fake.PrependReactor("create", "virtualmachine", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
+			create, ok := action.(testing.CreateAction)
+			Expect(ok).To(BeTrue())
+			Expect(create.GetObject().(*virtv1.VirtualMachineInstance).Name).To(Equal(vm.Name))
 
 			return true, create.GetObject(), nil
 		})
@@ -72,17 +70,17 @@ var _ = Describe("JobController", func() {
 		})
 	}
 
-	shouldExpectRemoveLabel := func(vm *virtv1.VirtualMachine) {
-		patchData := `[{"op": "remove", "path": "/metadata/labels/restart-vm-required"}]`
+	shouldExpectUpdateVMStatus := func(vm *virtv1.VirtualMachine) {
+		patchData := `[{ "op": "replace", "path": "/status/machineTypeRestartRequired", "value": false }]`
 
-		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &metav1.PatchOptions{}).Times(1)
+		vmInterface.EXPECT().PatchStatus(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &metav1.PatchOptions{}).Times(1)
 
 		kubeClient.Fake.PrependReactor("patch", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
 			patch, ok := action.(testing.PatchAction)
 			Expect(ok).To(BeTrue())
 			Expect(patch.GetPatch()).To(Equal([]byte(patchData)))
-			Expect(patch.GetPatchType()).To(Equal(types.MergePatchType))
-			Expect(vm.Labels).ToNot(HaveKey("restart-vm-required"), "should remove `restart-vm-required` label")
+			Expect(patch.GetPatchType()).To(Equal(types.JSONPatchType))
+			Expect(vm.Status.MachineTypeRestartRequired).To(BeTrue())
 			return true, vm, nil
 		})
 	}
@@ -137,21 +135,20 @@ var _ = Describe("JobController", func() {
 		})
 
 		Context("if VM machine type has not been updated", func() {
-			It("should not remove `restart-vm-required` label from VM", func() {
-				vm = newVMWithRestartLabel(machineTypeNeedsUpdate)
+			It("should not remove MachineTypeRestartRequired from VM Status", func() {
+				vm = newVMRestartRequired(machineTypeNeedsUpdate)
 				vmi = newVMIWithMachineType(machineTypeNeedsUpdate, vm.Name)
 				addVm(vm)
 				addVmi(vmi)
 
-				shouldExpectGetVM(vm)
+				shouldExpectVMCreation(vm)
 				shouldExpectVMICreation(vmi)
 				shouldExpectVMIDeletion(vmi)
 
 				deleteVmi(vmi)
 				controller.Execute()
 
-				Expect(vm.Labels).To(HaveKey("restart-vm-required"))
-				Expect(controller.ExitJob).ToNot(BeClosed(), "should not signal job termination as long as labels exist")
+				Expect(vm.Status.MachineTypeRestartRequired).To(BeTrue())
 			})
 		})
 
@@ -159,20 +156,14 @@ var _ = Describe("JobController", func() {
 			It("should remove `restart-vm-required` label from VM", func() {
 				selector, _ := labels.Parse("restart-vm-required=")
 				fmt.Println(selector.String())
-				vm = newVMWithRestartLabel("")
+				vm = newVMRestartRequired("")
 				vmi = newVMIWithMachineType(machineTypeNoUpdate, vm.Name)
 				addVmi(vmi)
 
-				shouldExpectGetVM(vm)
+				shouldExpectVMCreation(vm)
 				shouldExpectVMICreation(vmi)
-				vmInterface.EXPECT().List(context.Background(), &metav1.ListOptions{
-					LabelSelector: `restart-vm-required=`,
-				}).Return(&virtv1.VirtualMachineList{
-					Items: []virtv1.VirtualMachine{},
-				}, nil).Times(1)
-
 				shouldExpectVMIDeletion(vmi)
-				shouldExpectRemoveLabel(vm)
+				shouldExpectUpdateVMStatus(vm)
 
 				deleteVmi(vmi)
 				controller.Execute()
@@ -182,12 +173,11 @@ var _ = Describe("JobController", func() {
 	})
 })
 
-func newVMWithRestartLabel(machineType string) *virtv1.VirtualMachine {
+func newVMRestartRequired(machineType string) *virtv1.VirtualMachine {
 	testVM := &virtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("test-vm-%s", machineType),
 			Namespace: metav1.NamespaceDefault,
-			Labels:    map[string]string{"restart-vm-required": ""},
 		},
 		Spec: virtv1.VirtualMachineSpec{
 			Running: pointer.Bool(false),
@@ -196,6 +186,9 @@ func newVMWithRestartLabel(machineType string) *virtv1.VirtualMachine {
 					Domain: virtv1.DomainSpec{},
 				},
 			},
+		},
+		Status: virtv1.VirtualMachineStatus{
+			MachineTypeRestartRequired: true,
 		},
 	}
 	if machineType != "" {

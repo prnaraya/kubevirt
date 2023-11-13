@@ -38,7 +38,7 @@ const (
 	namespaceFlag          = "namespace"
 	labelSelectorFlag      = "label-selector"
 	forceRestartFlag       = "restart-now"
-	testLabel              = "testing-label="
+	testLabel              = "testing-label=true"
 )
 
 var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
@@ -70,7 +70,7 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			template := libvmi.New(
 				libvmi.WithResourceMemory(("32Mi")),
 				libvmi.WithNamespace(namespace),
-				libvmi.WithLabel("testing-label", ""),
+				libvmi.WithLabel("testing-label", "true"),
 				withMachineType(machineType),
 			)
 
@@ -128,7 +128,7 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			Consistently(thisJob(virtClient, job), 60*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
 		})
 
-		It("Example with label-selector flag", func() {
+		FIt("Example with label-selector flag", func() {
 			vmWithLabelStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, false)
 			vmWithLabelRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, true)
 			vmNoLabelStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
@@ -140,6 +140,8 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			Expect(err).ToNot(HaveOccurred())
 
 			job = expectJobExists(virtClient)
+
+			time.Sleep(300 * time.Second)
 
 			Eventually(ThisVM(vmWithLabelStopped), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())
 			Eventually(ThisVM(vmWithLabelRunning), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())

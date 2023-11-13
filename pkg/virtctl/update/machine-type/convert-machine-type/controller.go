@@ -1,7 +1,6 @@
 package convertmachinetype
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -51,24 +50,17 @@ func NewJobController(
 }
 
 func (c *JobController) exitJob() {
-	vmList, err := c.VirtClient.VirtualMachine(Namespace).List(context.Background(), &k8sv1.ListOptions{
-		LabelSelector: LabelSelector.String(),
-	})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// no VMs exist
-	if vmList.Items == nil || len(vmList.Items) == 0 {
-		close(c.ExitJob)
-		return
-	}
-
+	vms := c.VmInformer.GetStore().List()
 	outdatedVms := 0
 	vmsPendingRestart := 0
 
-	for _, vm := range vmList.Items {
+	fmt.Printf("Num VMs: %d", len(vms))
+
+	for _, obj := range vms {
+		vm := obj.(*v1.VirtualMachine)
+		if LabelSelector != nil && !LabelSelector.Matches(labels.Set(vm.Labels)) {
+			return
+		}
 		updated, err := isMachineTypeUpdated(vm)
 		if err != nil {
 			fmt.Println(err)
@@ -117,6 +109,7 @@ func (c *JobController) runWorker() {
 func (c *JobController) Execute() bool {
 	key, quit := c.Queue.Get()
 	if quit {
+		close(c.ExitJob)
 		return false
 	}
 
@@ -151,8 +144,12 @@ func (c *JobController) execute(key string) error {
 		return nil
 	}
 
-	if LabelSelector != nil && !LabelSelector.Matches(labels.Set(vm.Labels)) {
-		return nil
+	if LabelSelector != nil {
+		matches := LabelSelector.Matches(labels.Set(vm.Labels))
+		fmt.Printf("%s Matches: %t\n", vm.Name, matches)
+		if !matches {
+			return nil
+		}
 	}
 
 	// check if VM is running
