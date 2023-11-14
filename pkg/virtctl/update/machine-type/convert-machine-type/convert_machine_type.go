@@ -11,6 +11,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	k6tv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+
+	"kubevirt.io/kubevirt/pkg/controller"
 )
 
 func Run() {
@@ -51,6 +53,8 @@ func Run() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+		req, selectable := LabelSelector.Requirements()
+		fmt.Printf("%v, %t\n", req, selectable)
 	}
 
 	// set up JobController
@@ -59,8 +63,17 @@ func Run() {
 		os.Exit(1)
 	}
 
-	vmListWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachines", Namespace, fields.Everything())
-	vmiListWatcher := cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
+	var vmListWatcher *cache.ListWatch
+	var vmiListWatcher *cache.ListWatch
+
+	if LabelSelector != nil {
+		vmListWatcher = controller.NewListWatchFromClient(virtCli.RestClient(), "virtualmachines", Namespace, fields.Everything(), LabelSelector)
+		vmiListWatcher = controller.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything(), LabelSelector)
+	} else {
+		vmListWatcher = cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachines", Namespace, fields.Everything())
+		vmiListWatcher = cache.NewListWatchFromClient(virtCli.RestClient(), "virtualmachineinstances", Namespace, fields.Everything())
+	}
+
 	vmInformer := cache.NewSharedIndexInformer(vmListWatcher, &k6tv1.VirtualMachine{}, 1*time.Hour, cache.Indexers{})
 	vmiInformer := cache.NewSharedIndexInformer(vmiListWatcher, &k6tv1.VirtualMachineInstance{}, 1*time.Hour, cache.Indexers{})
 

@@ -45,30 +45,26 @@ func isMachineTypeUpdated(obj interface{}) (bool, error) {
 	switch obj := obj.(type) {
 	case *v1.VirtualMachine:
 		machine := obj.Spec.Template.Spec.Domain.Machine
-		matchesGlob := false
-		var err error
-
 		if machine != nil {
-			matchesGlob, err = matchMachineType(machine.Type)
+			matchesGlob, err := matchMachineType(machine.Type)
 			if err != nil {
 				return false, err
 			}
+			return machine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
 		}
-		return machine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
 	case *v1.VirtualMachineInstance:
-		specMachine := obj.Spec.Domain.Machine
 		statusMachine := obj.Status.Machine
-		if specMachine == nil || statusMachine == nil {
+		if statusMachine == nil {
 			return false, fmt.Errorf("vmi machine type is not set properly")
 		}
 		matchesGlob, err := matchMachineType(statusMachine.Type)
 		if err != nil {
 			return false, err
 		}
-		return specMachine.Type == virtconfig.DefaultAMD64MachineType || !matchesGlob, nil
-	default:
-		return false, fmt.Errorf("unknown object found")
+		return !matchesGlob, nil
 	}
+
+	return false, fmt.Errorf("unknown object found")
 }
 
 func (c *JobController) UpdateMachineType(vm *v1.VirtualMachine, running bool) error {

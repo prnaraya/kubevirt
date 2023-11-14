@@ -38,7 +38,7 @@ const (
 	namespaceFlag          = "namespace"
 	labelSelectorFlag      = "label-selector"
 	forceRestartFlag       = "restart-now"
-	testLabel              = "testing-label=true"
+	testLabel              = "testing-label="
 )
 
 var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorators.SigCompute, func() {
@@ -70,11 +70,17 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			template := libvmi.New(
 				libvmi.WithResourceMemory(("32Mi")),
 				libvmi.WithNamespace(namespace),
-				libvmi.WithLabel("testing-label", "true"),
 				withMachineType(machineType),
 			)
 
 			vm := tests.NewRandomVirtualMachine(template, running)
+			if hasLabel {
+				if vm.Labels == nil {
+					vm.Labels = map[string]string{}
+				}
+				vm.Labels["testing-label"] = ""
+			}
+
 			vm, err = virtClient.VirtualMachine(namespace).Create(context.Background(), vm)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -128,7 +134,7 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			Consistently(thisJob(virtClient, job), 60*time.Second, 1*time.Second).ShouldNot(haveCompletionTime())
 		})
 
-		FIt("Example with label-selector flag", func() {
+		It("Example with label-selector flag", func() {
 			vmWithLabelStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, false)
 			vmWithLabelRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, true)
 			vmNoLabelStopped := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
@@ -140,8 +146,6 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			Expect(err).ToNot(HaveOccurred())
 
 			job = expectJobExists(virtClient)
-
-			time.Sleep(300 * time.Second)
 
 			Eventually(ThisVM(vmWithLabelStopped), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())
 			Eventually(ThisVM(vmWithLabelRunning), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())
@@ -190,7 +194,8 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			vmNamespaceDefaultWithLabelRunning := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, true, true)
 			vmNamespaceOtherWithLabelStopped := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, true, false)
 			vmNamespaceOtherWithLabelRunning := createVM(machineTypeNeedsUpdate, metav1.NamespaceDefault, true, true)
-			vmNoUpdate := createVM(machineTypeNeedsUpdate, util.NamespaceTestDefault, false, false)
+			vmNoUpdateStopped := createVM(machineTypeNoUpdate, util.NamespaceTestDefault, true, false)
+			vmNoUpdateRunning := createVM(machineTypeNoUpdate, util.NamespaceTestDefault, true, true)
 
 			vmiNamespaceDefaultWithLabelRunning, err := virtClient.VirtualMachineInstance(vmNamespaceDefaultWithLabelRunning.Namespace).Get(context.Background(), vmNamespaceDefaultWithLabelRunning.Name, &metav1.GetOptions{})
 			Expect(err).ToNot(HaveOccurred())
@@ -211,16 +216,17 @@ var _ = FDescribe("[sig-compute][virtctl] mass machine type transition", decorat
 			Eventually(ThisVM(vmNamespaceDefaultWithLabelRunning), 60*time.Second, 1*time.Second).ShouldNot(haveRestartRequiredStatus())
 
 			// all other VM machine types should remain unchanged
-			Expect(ThisVM(vmNamespaceDefaultStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
-			Expect(ThisVM(vmNamespaceDefaultRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
-			Expect(ThisVM(vmNamespaceOtherStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
-			Expect(ThisVM(vmNamespaceOtherRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
-			Expect(ThisVM(vmNamespaceOtherWithLabelStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
-			Expect(ThisVM(vmNamespaceOtherWithLabelRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
-			Expect(ThisVM(vmNoUpdate)).Should(haveOriginalMachineType(machineTypeNoUpdate))
+			Eventually(ThisVM(vmNamespaceDefaultStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceDefaultRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceOtherStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceOtherRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceOtherWithLabelStopped)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNamespaceOtherWithLabelRunning)).Should(haveOriginalMachineType(machineTypeNeedsUpdate))
+			Eventually(ThisVM(vmNoUpdateStopped)).Should(haveOriginalMachineType(machineTypeNoUpdate))
+			Eventually(ThisVM(vmNoUpdateRunning)).Should(haveOriginalMachineType(machineTypeNoUpdate))
 
 			Eventually(ThisVMI(vmiNamespaceDefaultWithLabelRunning), 120*time.Second, 1*time.Second).Should(beRestarted(vmiNamespaceDefaultWithLabelRunning.UID))
-			Eventually(ThisVMI(vmiNamespaceDefaultWithLabelRunning)).Should(haveDefaultMachineType())
+			Eventually(ThisVMI(vmiNamespaceDefaultWithLabelRunning), 60*time.Second, 1*time.Second).Should(haveDefaultMachineType())
 
 			Eventually(thisJob(virtClient, job), 60*time.Second, 1*time.Second).Should(haveCompletionTime())
 		})

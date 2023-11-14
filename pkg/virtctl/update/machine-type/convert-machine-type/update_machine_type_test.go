@@ -24,7 +24,7 @@ const (
 	restartRequiredLabel   = "restart-vm-required"
 )
 
-var _ = Describe("Update Machine Type", func() {
+var _ = FDescribe("Update Machine Type", func() {
 	var ctrl *gomock.Controller
 	var virtClient *kubecli.MockKubevirtClient
 	var vmInterface *kubecli.MockVirtualMachineInterface

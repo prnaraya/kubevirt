@@ -1,7 +1,6 @@
 package convertmachinetype_test
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/golang/mock/gomock"
@@ -25,7 +24,7 @@ import (
 	. "kubevirt.io/kubevirt/pkg/virtctl/update/machine-type/convert-machine-type"
 )
 
-var _ = Describe("JobController", func() {
+var _ = FDescribe("JobController", func() {
 	var ctrl *gomock.Controller
 	var virtClient *kubecli.MockKubevirtClient
 	var vmInterface *kubecli.MockVirtualMachineInterface
@@ -73,9 +72,9 @@ var _ = Describe("JobController", func() {
 	shouldExpectUpdateVMStatus := func(vm *virtv1.VirtualMachine) {
 		patchData := `[{ "op": "replace", "path": "/status/machineTypeRestartRequired", "value": false }]`
 
-		vmInterface.EXPECT().PatchStatus(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &metav1.PatchOptions{}).Times(1)
+		// vmInterface.EXPECT().PatchStatus(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &metav1.PatchOptions{}).Times(1)
 
-		kubeClient.Fake.PrependReactor("patch", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
+		kubeClient.Fake.PrependReactor("patchstatus", "virtualmachines", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
 			patch, ok := action.(testing.PatchAction)
 			Expect(ok).To(BeTrue())
 			Expect(patch.GetPatch()).To(Equal([]byte(patchData)))

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	k8sv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -54,19 +53,13 @@ func (c *JobController) exitJob() {
 	outdatedVms := 0
 	vmsPendingRestart := 0
 
-	fmt.Printf("Num VMs: %d", len(vms))
-
 	for _, obj := range vms {
 		vm := obj.(*v1.VirtualMachine)
-		if LabelSelector != nil && !LabelSelector.Matches(labels.Set(vm.Labels)) {
-			return
-		}
 		updated, err := isMachineTypeUpdated(vm)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-
 		if !updated {
 			outdatedVms++
 		} else if vm.Status.MachineTypeRestartRequired {
@@ -93,6 +86,7 @@ func (c *JobController) run(stopCh <-chan struct{}) {
 	}
 
 	vmKeys := c.VmInformer.GetStore().ListKeys()
+	fmt.Printf("Num vm keys: %d\n", len(vmKeys))
 	for _, k := range vmKeys {
 		c.Queue.Add(k)
 	}
@@ -139,19 +133,7 @@ func (c *JobController) execute(key string) error {
 
 	vm := obj.(*v1.VirtualMachine)
 
-	// we only care if the VM has the specified namespace and label(s)
-	if Namespace != k8sv1.NamespaceAll && vm.Namespace != Namespace {
-		return nil
-	}
-
-	if LabelSelector != nil {
-		matches := LabelSelector.Matches(labels.Set(vm.Labels))
-		fmt.Printf("%s Matches: %t\n", vm.Name, matches)
-		if !matches {
-			return nil
-		}
-	}
-
+	fmt.Printf("VM: %s, labels: %v, machine type: %s, running: %t\n", vm.Name, vm.Labels, vm.Spec.Template.Spec.Domain.Machine.Type, *vm.Spec.Running)
 	// check if VM is running
 	isRunning, err := vmIsRunning(vm)
 	if err != nil {
@@ -166,51 +148,45 @@ func (c *JobController) execute(key string) error {
 		return err
 	}
 
-	// update stopped VMs that require update
-	if !updated && !isRunning {
-		err = c.UpdateMachineType(vm, false)
+	// update VMs that require update
+	if !updated {
+		err = c.UpdateMachineType(vm, isRunning)
 		if err != nil {
 			fmt.Println(err)
+			return err
 		}
+	}
+
+	// don't need to do anything else to stopped VMs
+	if !isRunning {
+		return nil
+	}
+
+	// get VMI from cache
+	vmKey, err := cache.MetaNamespaceKeyFunc(vm)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	obj, exists, err = c.VmiInformer.GetStore().GetByKey(vmKey)
+	if err != nil || !exists {
 		return err
 	}
 
-	if isRunning {
-		// get VMI from cache
-		vmKey, err := cache.MetaNamespaceKeyFunc(vm)
-		if err != nil {
-			fmt.Println(err)
-			return err
-		}
-		obj, exists, err := c.VmiInformer.GetStore().GetByKey(vmKey)
-		if err != nil || !exists {
-			fmt.Println(err)
-			return err
-		}
+	vmi := obj.(*v1.VirtualMachineInstance)
 
-		vmi := obj.(*v1.VirtualMachineInstance)
-
-		// update VM machine type if it needs to be
-		if !updated {
-			err = c.UpdateMachineType(vm, true)
-			if err != nil {
-				fmt.Println(err)
-			}
-			return err
-		}
-
-		// check if VMI machine type has been updated
-		updated, err = isMachineTypeUpdated(vmi)
-		if err != nil {
-			fmt.Println(err)
-			return err
-		}
-
-		if !updated {
-			fmt.Println("vmi machine type has not been updated")
-			return nil
-		}
+	// check if VMI machine type has been updated
+	updated, err = isMachineTypeUpdated(vmi)
+	if err != nil {
+		fmt.Println(err)
+		return err
 	}
+
+	if !updated {
+		fmt.Println("vmi machine type has not been updated")
+		return nil
+	}
+
 	// mark MachineTypeRestartRequired as false
 	patchString := fmt.Sprintf(`[{ "op": "replace", "path": "/status/machineTypeRestartRequired", "value": %t }]`, false)
 	err = c.statusUpdater.PatchStatus(vm, types.JSONPatchType, []byte(patchString), &k8sv1.PatchOptions{})
