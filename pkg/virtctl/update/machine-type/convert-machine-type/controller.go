@@ -128,12 +128,12 @@ func (c *JobController) vmHandler(obj interface{}) {
 func (c *JobController) execute(key string) error {
 	obj, exists, err := c.VmInformer.GetStore().GetByKey(key)
 	if err != nil || !exists {
-		return nil
+		return err
 	}
 
 	vm := obj.(*v1.VirtualMachine)
+	fmt.Println(vm)
 
-	fmt.Printf("VM: %s, labels: %v, machine type: %s, running: %t\n", vm.Name, vm.Labels, vm.Spec.Template.Spec.Domain.Machine.Type, *vm.Spec.Running)
 	// check if VM is running
 	isRunning, err := vmIsRunning(vm)
 	if err != nil {
@@ -155,36 +155,37 @@ func (c *JobController) execute(key string) error {
 			fmt.Println(err)
 			return err
 		}
+		// don't need to do anything else to stopped VMs
+		if !isRunning {
+			return nil
+		}
 	}
 
-	// don't need to do anything else to stopped VMs
-	if !isRunning {
-		return nil
-	}
+	if isRunning {
+		// get VMI from cache
+		vmKey, err := cache.MetaNamespaceKeyFunc(vm)
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		obj, exists, err = c.VmiInformer.GetStore().GetByKey(vmKey)
+		if err != nil || !exists {
+			return err
+		}
 
-	// get VMI from cache
-	vmKey, err := cache.MetaNamespaceKeyFunc(vm)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	obj, exists, err = c.VmiInformer.GetStore().GetByKey(vmKey)
-	if err != nil || !exists {
-		return err
-	}
+		vmi := obj.(*v1.VirtualMachineInstance)
 
-	vmi := obj.(*v1.VirtualMachineInstance)
+		// check if VMI machine type has been updated
+		updated, err = isMachineTypeUpdated(vmi)
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
 
-	// check if VMI machine type has been updated
-	updated, err = isMachineTypeUpdated(vmi)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-
-	if !updated {
-		fmt.Println("vmi machine type has not been updated")
-		return nil
+		if !updated {
+			fmt.Println("vmi machine type has not been updated")
+			return nil
+		}
 	}
 
 	// mark MachineTypeRestartRequired as false

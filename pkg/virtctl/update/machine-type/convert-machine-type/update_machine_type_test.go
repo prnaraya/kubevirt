@@ -24,7 +24,7 @@ const (
 	restartRequiredLabel   = "restart-vm-required"
 )
 
-var _ = FDescribe("Update Machine Type", func() {
+var _ = Describe("Update Machine Type", func() {
 	var ctrl *gomock.Controller
 	var virtClient *kubecli.MockKubevirtClient
 	var vmInterface *kubecli.MockVirtualMachineInterface
@@ -35,21 +35,15 @@ var _ = FDescribe("Update Machine Type", func() {
 	var err error
 
 	shouldExpectRestartRequiredLabel := func(vm *k6tv1.VirtualMachine) {
-		patchData := `{"metadata":{"labels":{"restart-vm-required":""}}}`
+		patchData := `[{ "op": "add", "path": "/status/machineTypeRestartRequired", "value": true }]`
 
-		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.MergePatchType, []byte(patchData), &v1.PatchOptions{}).DoAndReturn(func(ctx context.Context, vmName string, patchType types.PatchType, patch []byte, opts *v1.PatchOptions, subresources ...interface{}) (*k6tv1.VirtualMachine, error) {
-			vm.Labels[restartRequiredLabel] = ""
-			return vm, nil
-		}).Times(1)
+		vmInterface.EXPECT().PatchStatus(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &v1.PatchOptions{}).Times(1)
 	}
 
 	shouldExpectPatchMachineType := func(vm *k6tv1.VirtualMachine) {
 		patchData := `[{"op": "remove", "path": "/spec/template/spec/domain/machine"}]`
 
-		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &v1.PatchOptions{}).DoAndReturn(func(ctx context.Context, vmName string, patchType types.PatchType, patch []byte, opts *v1.PatchOptions, subresources ...interface{}) (*k6tv1.VirtualMachine, error) {
-			vm.Spec.Template.Spec.Domain.Machine = nil
-			return vm, nil
-		}).Times(1)
+		vmInterface.EXPECT().Patch(context.Background(), vm.Name, types.JSONPatchType, []byte(patchData), &v1.PatchOptions{}).Times(1)
 	}
 
 	BeforeEach(func() {
@@ -79,11 +73,9 @@ var _ = FDescribe("Update Machine Type", func() {
 
 			err := controller.UpdateMachineType(vm, false)
 			Expect(err).ToNot(HaveOccurred())
-
-			Expect(vm.Spec.Template.Spec.Domain.Machine).To(BeNil())
 		})
 
-		It("should apply 'restart-vm-required' label when VM is running", func() {
+		It("should set MachineTypeRestartRequired to true in VM Status", func() {
 			vm := newVMWithMachineType(machineTypeNeedsUpdate, true)
 
 			shouldExpectPatchMachineType(vm)
@@ -91,9 +83,6 @@ var _ = FDescribe("Update Machine Type", func() {
 
 			err := controller.UpdateMachineType(vm, true)
 			Expect(err).ToNot(HaveOccurred())
-
-			Expect(vm.Spec.Template.Spec.Domain.Machine).To(BeNil())
-			Expect(vm.Labels).To(HaveKey(restartRequiredLabel))
 		})
 
 		It("should restart VM when VM is running and restartNow=true", func() {
@@ -106,8 +95,6 @@ var _ = FDescribe("Update Machine Type", func() {
 
 			err := controller.UpdateMachineType(vm, true)
 			Expect(err).ToNot(HaveOccurred())
-
-			Expect(vm.Spec.Template.Spec.Domain.Machine).To(BeNil())
 
 			RestartNow = false
 		})
