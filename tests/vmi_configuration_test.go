@@ -33,8 +33,10 @@ import (
 	"kubevirt.io/kubevirt/pkg/pointer"
 
 	"kubevirt.io/kubevirt/tests/decorators"
+	"kubevirt.io/kubevirt/tests/libpod"
 
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
 
@@ -1241,6 +1243,192 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 					}, 30*time.Second, time.Second).Should(BeTrue())
 					Expect(vmiCondition.Message).To(ContainSubstring("Insufficient hugepages-3Mi"))
 					Expect(vmiCondition.Reason).To(Equal("Unschedulable"))
+				})
+			})
+
+			Context("with VFIO device requested", Serial, decorators.VGPU, func() {
+				var vmi *v1.VirtualMachineInstance
+				var deviceName = "nvidia.com/GRID_T4-1B"
+				var mdevSelector = "GRID T4-1B"
+				var updatedDeviceName = "nvidia.com/GRID_T4-2B"
+				var updatedMdevSelector = "GRID T4-2B"
+				var desiredMdevTypeName = "nvidia-222"
+				var expectedInstancesNum = 16
+				var config v1.KubeVirtConfiguration
+				var err error
+
+				waitForPod := func(outputPod *k8sv1.Pod, fetchPod func() (*k8sv1.Pod, error)) wait.ConditionFunc {
+					return func() (bool, error) {
+
+						latestPod, err := fetchPod()
+						if err != nil {
+							return false, err
+						}
+						*outputPod = *latestPod
+
+						return latestPod.Status.Phase == k8sv1.PodFailed || latestPod.Status.Phase == k8sv1.PodSucceeded, nil
+					}
+				}
+
+				checkAllMDEVCreated := func(mdevTypeName string, expectedInstancesCount int) func() (*k8sv1.Pod, error) {
+					return func() (*k8sv1.Pod, error) {
+						By(fmt.Sprintf("Checking the number of created mdev types, should be %d of %s type ", expectedInstancesCount, mdevTypeName))
+						check := fmt.Sprintf(`set -x
+					files_num=$(ls -A /sys/bus/mdev/devices/| wc -l)
+					if [[ $files_num != %d ]] ; then
+					  echo "failed, not enough mdevs of type %[2]s has been created"
+					  exit 1
+					fi
+					for x in $(ls -A /sys/bus/mdev/devices/); do
+					  type_name=$(basename "$(readlink -f /sys/bus/mdev/devices/$x/mdev_type)")
+					  if [[ "$type_name" != "%[2]s" ]]; then
+						 echo "failed, not all mdevs of type %[2]s"
+						 exit 1
+					  fi
+					  exit 0
+					done`, expectedInstancesCount, mdevTypeName)
+						testPod := libpod.RenderPod("test-all-mdev-created", []string{"/bin/bash", "-c"}, []string{check})
+						testPod, err = virtClient.CoreV1().Pods(testsuite.NamespacePrivileged).Create(context.Background(), testPod, metav1.CreateOptions{})
+						ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+						var latestPod k8sv1.Pod
+						err := wait.PollImmediate(5*time.Second, 3*time.Minute, waitForPod(&latestPod, ThisPod(testPod)))
+						return &latestPod, err
+					}
+
+				}
+
+				BeforeEach(func() {
+					kv := util.GetCurrentKv(virtClient)
+
+					By("Creating a configuration for mediated devices")
+					config = kv.Spec.Configuration
+					config.DeveloperConfiguration.FeatureGates = append(config.DeveloperConfiguration.FeatureGates, virtconfig.GPUGate)
+					config.MediatedDevicesConfiguration = &v1.MediatedDevicesConfiguration{
+						MediatedDeviceTypes: []string{desiredMdevTypeName},
+					}
+					config.PermittedHostDevices = &v1.PermittedHostDevices{
+						MediatedDevices: []v1.MediatedHostDevice{
+							{
+								MDEVNameSelector: mdevSelector,
+								ResourceName:     deviceName,
+							},
+							{
+								MDEVNameSelector: updatedMdevSelector,
+								ResourceName:     updatedDeviceName,
+							},
+						},
+					}
+					tests.UpdateKubeVirtConfigValueAndWait(config)
+
+					By("Verifying that an expected amount of devices has been created")
+					Eventually(checkAllMDEVCreated(desiredMdevTypeName, expectedInstancesNum), 3*time.Minute, 15*time.Second).Should(BeInPhase(k8sv1.PodSucceeded))
+				})
+
+				checkAllMDEVRemoved := func() (*k8sv1.Pod, error) {
+					check := `set -x
+					files_num=$(ls -A /sys/bus/mdev/devices/| wc -l)
+					if [[ $files_num != 0 ]] ; then
+					  echo "failed, not all mdevs removed"
+					  exit 1
+					fi
+						exit 0`
+					testPod := libpod.RenderPod("test-all-mdev-removed", []string{"/bin/bash", "-c"}, []string{check})
+					testPod, err = virtClient.CoreV1().Pods(testsuite.NamespacePrivileged).Create(context.Background(), testPod, metav1.CreateOptions{})
+					ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+					var latestPod k8sv1.Pod
+					err := wait.PollImmediate(time.Second, 2*time.Minute, waitForPod(&latestPod, ThisPod(testPod)))
+					return &latestPod, err
+				}
+
+				noGPUDevicesAreAvailable := func() {
+					EventuallyWithOffset(2, checkAllMDEVRemoved, 2*time.Minute, 10*time.Second).Should(BeInPhase(k8sv1.PodSucceeded))
+
+					EventuallyWithOffset(2, func() int64 {
+						nodes, err := virtClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+						ExpectWithOffset(3, err).ToNot(HaveOccurred())
+						for _, node := range nodes.Items {
+							for key, amount := range node.Status.Capacity {
+								if strings.HasPrefix(string(key), "nvidia.com/") {
+									ret, ok := amount.AsInt64()
+									ExpectWithOffset(3, ok).To(BeTrue())
+									return ret
+								}
+							}
+						}
+						return 0
+					}, 2*time.Minute, 5*time.Second).Should(BeZero(), "wait for the kubelet to stop promoting unconfigured devices")
+				}
+
+				cleanupConfiguredMdevs := func() {
+					By("Deleting the VMI")
+					ExpectWithOffset(1, virtClient.VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Delete(context.Background(), vmi.Name, &metav1.DeleteOptions{})).To(Succeed(), "Should delete VMI")
+					By("Creating a configuration for mediated devices")
+					config.MediatedDevicesConfiguration = &v1.MediatedDevicesConfiguration{}
+					tests.UpdateKubeVirtConfigValueAndWait(config)
+					By("Verifying that an expected amount of devices has been created")
+					noGPUDevicesAreAvailable()
+				}
+
+				AfterEach(func() {
+					cleanupConfiguredMdevs()
+				})
+
+				It("[Serial]should consume hugepages", Serial, func() {
+					hugepageSize := "2Mi"
+					memory := "64Mi"
+					hugepageType := kubev1.ResourceName(kubev1.ResourceHugePagesPrefix + hugepageSize)
+					v, err := cluster.GetKubernetesVersion()
+					Expect(err).ShouldNot(HaveOccurred())
+					if strings.Contains(v, "1.16") {
+						hugepagesVmi.Annotations = map[string]string{
+							v1.MemfdMemoryBackend: "false",
+						}
+						log.DefaultLogger().Object(hugepagesVmi).Infof("Fall back to use hugepages source file. Libvirt in the 1.16 provider version doesn't support memfd as memory backend")
+					}
+
+					nodeWithHugepages := libnode.GetNodeWithHugepages(virtClient, hugepageType)
+					if nodeWithHugepages == nil {
+						Skip(fmt.Sprintf("No node with hugepages %s capacity", hugepageType))
+					}
+					// initialHugepages := nodeWithHugepages.Status.Capacity[resourceName]
+					hugepagesVmi.Spec.Affinity = &kubev1.Affinity{
+						NodeAffinity: &kubev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &kubev1.NodeSelector{
+								NodeSelectorTerms: []kubev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []kubev1.NodeSelectorRequirement{
+											{Key: "kubernetes.io/hostname", Operator: kubev1.NodeSelectorOpIn, Values: []string{nodeWithHugepages.Name}},
+										},
+									},
+								},
+							},
+						},
+					}
+					hugepagesVmi.Spec.Domain.Resources.Requests[kubev1.ResourceMemory] = resource.MustParse(memory)
+
+					hugepagesVmi.Spec.Domain.Memory = &v1.Memory{
+						Hugepages: &v1.Hugepages{PageSize: hugepageSize},
+					}
+
+					namespace := testsuite.GetTestNamespace(nil)
+					hugepagesVmi.Spec.Domain.Resources = v1.ResourceRequirements{}
+					vGPUs := []v1.GPU{
+						{
+							Name:       "gpu1",
+							DeviceName: deviceName,
+						},
+					}
+					hugepagesVmi.Spec.Domain.Devices.GPUs = vGPUs
+
+					By("Starting a VM")
+					hugepagesVmi, err = virtClient.VirtualMachineInstance(namespace).Create(context.Background(), hugepagesVmi)
+					Expect(err).ToNot(HaveOccurred())
+					libwait.WaitForSuccessfulVMIStart(hugepagesVmi)
+
+					By("Checking that the VM memory equals to a number of consumed hugepages")
+					Eventually(func() bool { return verifyHugepagesConsumption() }, 30*time.Second, 5*time.Second).Should(BeTrue())
 				})
 			})
 		})
