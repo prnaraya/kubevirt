@@ -934,16 +934,6 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 			var vmi *v1.VirtualMachineInstance
 
 			BeforeEach(func() {
-				vmi = api.NewMinimalVMI("testvmi")
-				guestMemory := resource.MustParse("128Mi")
-
-				vmi.Spec.Domain.Resources.Requests = k8sv1.ResourceList{
-					k8sv1.ResourceMemory: resource.MustParse("64Mi"),
-				}
-				vmi.Spec.Domain.Memory = &v1.Memory{Guest: &guestMemory}
-			})
-
-			It("should be rejected when VM has VFIO device", func() {
 				kvConfig := kv.DeepCopy()
 				kvConfig.Spec.Configuration.DeveloperConfiguration.FeatureGates = []string{virtconfig.GPUGate}
 				kvConfig.Spec.Configuration.PermittedHostDevices = &v1.PermittedHostDevices{
@@ -955,6 +945,16 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 					},
 				}
 				testutils.UpdateFakeKubeVirtClusterConfig(kvInformer, kvConfig)
+				vmi = api.NewMinimalVMI("testvmi")
+				guestMemory := resource.MustParse("128Mi")
+
+				vmi.Spec.Domain.Resources.Requests = k8sv1.ResourceList{
+					k8sv1.ResourceMemory: resource.MustParse("64Mi"),
+				}
+				vmi.Spec.Domain.Memory = &v1.Memory{Guest: &guestMemory}
+			})
+
+			It("should be rejected when VM has VFIO device", func() {
 				vmi.Spec.Domain.Devices.GPUs = []v1.GPU{
 					{
 						Name:       "gpu1",
@@ -964,8 +964,6 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 				causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("fake"), &vmi.Spec, config)
 				Expect(causes).To(HaveLen(1))
 				Expect(causes[0].Field).To(Equal("fake.domain.memory.guest"))
-
-				disableFeatureGates()
 			})
 
 			It("should be allowed when VM has no VFIO device", func() {

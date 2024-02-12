@@ -742,14 +742,11 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 			})
 		})
 
-		Context("[rfe_id:140][crit:medium][vendor:cnv-qe@redhat.com][level:component]with guest memory greater than request memory", func() {
-			It("[test_id:1669]should successfully start the VM when no VFIO device requested", func() {
-				vmi := libvmi.NewCirros()
-				guestMemory := resource.MustParse("512Mi")
-				vmi.Spec.Domain.Memory = &v1.Memory{
-					Guest: &guestMemory,
-				}
-
+		Context("with guest memory greater than request memory", func() {
+			It("should successfully start the VM when no VFIO device requested", func() {
+				vmi := libvmi.NewCirros(
+					libvmi.WithGuestMemory("512Mi"),
+				)
 				vmi, err := virtClient.VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vmi)
 				Expect(err).ToNot(HaveOccurred())
 

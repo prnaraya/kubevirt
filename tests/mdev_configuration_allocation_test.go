@@ -9,8 +9,11 @@ import (
 	"strings"
 	"time"
 
+	cd "kubevirt.io/kubevirt/tests/containerdisk"
 	"kubevirt.io/kubevirt/tests/decorators"
 	"kubevirt.io/kubevirt/tests/exec"
+	"kubevirt.io/kubevirt/tests/libnet"
+	"kubevirt.io/kubevirt/tests/libvmi"
 
 	"kubevirt.io/kubevirt/tests/framework/cleanup"
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
@@ -358,25 +361,26 @@ var _ = Describe("[Serial][sig-compute]MediatedDevices", Serial, decorators.VGPU
 		})
 		It("should successfully create VMI when guest memory is less than or equal to request memory", func() {
 			By("Creating a Fedora VMI")
-			vmi = tests.NewRandomFedoraVMI()
-			vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("1G")
-			vGPUs := []v1.GPU{
-				{
-					Name:       "gpu1",
-					DeviceName: deviceName,
-				},
+			networkData := libnet.CreateDefaultCloudInitNetworkData()
+			vGPU := v1.GPU{
+				Name:       "gpu1",
+				DeviceName: deviceName,
 			}
-			vmi.Spec.Domain.Devices.GPUs = vGPUs
 
-			guestMemory := resource.MustParse("512M")
-			vmi.Spec.Domain.Memory = &v1.Memory{Guest: &guestMemory}
-			vmi.Spec.Domain.Resources = v1.ResourceRequirements{}
+			vmi = libvmi.New(
+				libvmi.WithRng(),
+				libvmi.WithContainerDisk("disk0", cd.ContainerDiskFor(cd.ContainerDiskFedoraTestTooling)),
+				libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
+				libvmi.WithNetwork(v1.DefaultPodNetwork()),
+				libvmi.WithCloudInitNoCloudNetworkData(networkData),
+				libvmi.WithGuestMemory("512Mi"),
+				withGPUDevice(vGPU),
+			)
 
 			createdVmi, err := virtClient.VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vmi)
 			Expect(err).ToNot(HaveOccurred())
 			vmi = createdVmi
-			libwait.WaitForSuccessfulVMIStart(vmi)
-			Expect(console.LoginToFedora(vmi)).To(Succeed())
+			libwait.WaitUntilVMIReady(vmi, console.LoginToFedora)
 		})
 		It("should ignore memory-overcommit if the resulting request memory is less than guest memory", func() {
 			By("Applying cluster memory-overcommit")
@@ -384,25 +388,26 @@ var _ = Describe("[Serial][sig-compute]MediatedDevices", Serial, decorators.VGPU
 			tests.UpdateKubeVirtConfigValueAndWait(config)
 
 			By("Creating a Fedora VMI")
-			vmi = tests.NewRandomFedoraVMI()
-			vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("1G")
-			vGPUs := []v1.GPU{
-				{
-					Name:       "gpu1",
-					DeviceName: deviceName,
-				},
+			networkData := libnet.CreateDefaultCloudInitNetworkData()
+			vGPU := v1.GPU{
+				Name:       "gpu1",
+				DeviceName: deviceName,
 			}
-			vmi.Spec.Domain.Devices.GPUs = vGPUs
 
-			guestMemory := resource.MustParse("4096M")
-			vmi.Spec.Domain.Memory = &v1.Memory{Guest: &guestMemory}
-			vmi.Spec.Domain.Resources = v1.ResourceRequirements{}
+			vmi = libvmi.New(
+				libvmi.WithRng(),
+				libvmi.WithContainerDisk("disk0", cd.ContainerDiskFor(cd.ContainerDiskFedoraTestTooling)),
+				libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
+				libvmi.WithNetwork(v1.DefaultPodNetwork()),
+				libvmi.WithCloudInitNoCloudNetworkData(networkData),
+				libvmi.WithGuestMemory("512Mi"),
+				withGPUDevice(vGPU),
+			)
 
 			createdVmi, err := virtClient.VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vmi)
 			Expect(err).ToNot(HaveOccurred())
 			vmi = createdVmi
-			libwait.WaitForSuccessfulVMIStart(vmi)
-			Expect(console.LoginToFedora(vmi)).To(Succeed())
+			libwait.WaitUntilVMIReady(vmi, console.LoginToFedora)
 			Expect(vmi.Spec.Domain.Resources.Requests.Memory().String()).To(Equal("4096M"))
 		})
 		It("consume hugepages when page size is greater than request memory", func() {
@@ -670,3 +675,9 @@ var _ = Describe("[Serial][sig-compute]MediatedDevices", Serial, decorators.VGPU
 		})
 	})
 })
+
+func withGPUDevice(vGPU v1.GPU) libvmi.Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		vmi.Spec.Domain.Devices.GPUs = append(vmi.Spec.Domain.Devices.GPUs, vGPU)
+	}
+}
