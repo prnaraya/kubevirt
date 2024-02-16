@@ -878,6 +878,17 @@ func (c *VMController) addStartRequest(vm *virtv1.VirtualMachine) error {
 }
 
 func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) (*virtv1.VirtualMachine, syncError) {
+	// check if VM has ForceDeleteVM annotation; if so, force stop the VMI if it exists
+	if _, ok := vm.ObjectMeta.Annotations[virtv1.ForceDeleteVM]; ok {
+		vm, err := c.stopVMI(vm, vmi)
+		if err != nil {
+			log.Log.Object(vm).Errorf(failureDeletingVmiErrFormat, err)
+			return vm, &syncErrorImpl{fmt.Errorf(failureDeletingVmiErrFormat, err), VMIFailedDeleteReason}
+		}
+
+		return vm, nil
+	}
+
 	runStrategy, err := vm.RunStrategy()
 	if err != nil {
 		return vm, &syncErrorImpl{fmt.Errorf(fetchingRunStrategyErrFmt, err), FailedCreateReason}
