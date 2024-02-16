@@ -124,15 +124,11 @@ func (mutator *VMsMutator) Mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 	mutator.setDefaultMachineType(&vm, preferenceSpec)
 	mutator.setPreferenceStorageClassName(&vm, preferenceSpec)
 
-	// If the VirtualMachine is being force deleted (i.e GracePeriodSeconds is 0),
-	// we want to honor the force deletion and update the VM's TerminationGracePeriodSeconds
+	// If the VirtualMachine is being deleted, set TerminationGracePeriodSeconds to be 0
+	// assuming a force deletion
 	if ar.Request.Operation == admissionv1.Delete {
-		deleteOpts := metav1.DeleteOptions{}
-		err = json.Unmarshal(ar.Request.Options.Raw, &deleteOpts)
-
-		if deleteOpts.GracePeriodSeconds != nil && *deleteOpts.GracePeriodSeconds == 0 {
-			mutator.setTerminationGracePeriodSeconds(&vm, deleteOpts.GracePeriodSeconds)
-		}
+		zeroGracePeriod := int64(0)
+		mutator.setTerminationGracePeriodSeconds(&vm, &zeroGracePeriod)
 	}
 
 	patchBytes, err := patch.GeneratePatchPayload(
