@@ -879,7 +879,7 @@ func (c *VMController) addStartRequest(vm *virtv1.VirtualMachine) error {
 
 func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) (*virtv1.VirtualMachine, syncError) {
 	// check if VM has ForceDeleteVM annotation; if so, force stop the VMI if it exists
-	if _, ok := vm.ObjectMeta.Annotations[virtv1.ForceDeleteVM]; ok {
+	if _, ok := vm.ObjectMeta.GetAnnotations()[virtv1.ForceDeleteVM]; ok {
 		vm, err := c.stopVMI(vm, vmi)
 		if err != nil {
 			log.Log.Object(vm).Errorf(failureDeletingVmiErrFormat, err)
@@ -1478,7 +1478,7 @@ func (c *VMController) stopVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMac
 	// if for some reason the VM has been requested to be deleted, we want to use the
 	// deletion grace period specified to the VM as the TerminationGracePeriodSeconds
 	// for the VMI.
-	if vm.DeletionTimestamp != nil {
+	if _, ok := vm.GetAnnotations()[virtv1.ForceDeleteVM]; vm.DeletionTimestamp != nil && !ok {
 		err = c.patchVMITerminationGracePeriod(vm.GetDeletionGracePeriodSeconds(), vmi)
 		if err != nil {
 			log.Log.Object(vmi).Errorf("unable to patch vmi termination grace period: %v", err)
@@ -1494,6 +1494,14 @@ func (c *VMController) stopVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMac
 		c.expectations.DeletionObserved(vmKey, controller.VirtualMachineInstanceKey(vmi))
 		c.recorder.Eventf(vm, k8score.EventTypeWarning, FailedDeleteVirtualMachineReason, "Error deleting virtual machine instance %s: %v", vmi.ObjectMeta.Name, err)
 		return vm, err
+	}
+
+	// If VM has been force deleted due to the VMI being deleted, don't attempt cleanup
+	if vm == nil {
+		c.recorder.Eventf(vm, k8score.EventTypeNormal, SuccessfulDeleteVirtualMachineReason, "Deleted the virtual machine by deleting the virtual machine instance %v", vmi.ObjectMeta.UID)
+		log.Log.Object(vm).Infof("Dispatching delete event for vmi %s with phase %s", controller.NamespacedKey(vmi.Namespace, vmi.Name), vmi.Status.Phase)
+
+		return vm, nil
 	}
 
 	vm, err = c.cleanupRestartRequired(vm)

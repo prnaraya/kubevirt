@@ -2139,6 +2139,26 @@ var _ = Describe("VirtualMachine", func() {
 			testutils.ExpectEvent(recorder, SuccessfulDeleteVirtualMachineReason)
 		})
 
+		FIt("should delete VirtualMachineInstance when VirtualMachine has ForceDeleteVM annotation", func() {
+			vm, vmi := DefaultVirtualMachine(true)
+			vm.DeletionTimestamp = now()
+			vm.DeletionGracePeriodSeconds = kvpointer.P(int64(0))
+			vm.SetAnnotations(map[string]string{
+				v1.ForceDeleteVM: "",
+			})
+
+			addVirtualMachine(vm)
+			vmiFeeder.Add(vmi)
+
+			vmInterface.EXPECT().Update(context.Background(), gomock.Any()).Return(vm, nil)
+			vmiInterface.EXPECT().Delete(context.Background(), gomock.Any(), gomock.Any()).Return(nil)
+			shouldExpectGracePeriodPatched(int64(0), vmi)
+
+			controller.Execute()
+
+			testutils.ExpectEvent(recorder, SuccessfulDeleteVirtualMachineReason)
+		})
+
 		It("should remove controller finalizer once VirtualMachineInstance is gone", func() {
 			//DefaultVirtualMachine already set finalizer
 			vm, _ := DefaultVirtualMachine(true)
