@@ -31,8 +31,6 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 
-	"k8s.io/utils/pointer"
-
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -63,6 +61,7 @@ import (
 
 	kvcontroller "kubevirt.io/kubevirt/pkg/controller"
 	"kubevirt.io/kubevirt/pkg/network/sriov"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	storagetypes "kubevirt.io/kubevirt/pkg/storage/types"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
@@ -275,7 +274,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 		kubevirtFakeConfig := &virtv1.KubeVirtConfiguration{
 			DeveloperConfiguration: &virtv1.DeveloperConfiguration{
-				MinimumClusterTSCFrequency: pointer.Int64(12345),
+				MinimumClusterTSCFrequency: pointer.P(int64(12345)),
 			},
 		}
 
@@ -3236,7 +3235,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 			vmi.Spec.Architecture = "amd64"
 			vmi.Spec.Domain.Features = &v1.Features{
 				Hyperv: &v1.FeatureHyperv{
-					Reenlightenment: &v1.FeatureState{Enabled: pointer.Bool(true)},
+					Reenlightenment: &v1.FeatureState{Enabled: pointer.P(true)},
 				},
 			}
 
@@ -3340,7 +3339,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 			vmi := NewPendingVirtualMachine("testvmi")
 			setReadyCondition(vmi, k8sv1.ConditionFalse, virtv1.GuestNotRunningReason)
 			vmi.Status.Phase = virtv1.Scheduling
-			vmi.Spec.Domain.Devices.AutoattachVSOCK = pointer.Bool(true)
+			vmi.Spec.Domain.Devices.AutoattachVSOCK = pointer.P(true)
 			pod := NewPodForVirtualMachine(vmi, k8sv1.PodRunning)
 
 			addVirtualMachine(vmi)
@@ -3357,7 +3356,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 		It("should recycle the CID when the pods are deleted", func() {
 			vmi := NewPendingVirtualMachine("testvmi")
-			vmi.Spec.Domain.Devices.AutoattachVSOCK = pointer.Bool(true)
+			vmi.Spec.Domain.Devices.AutoattachVSOCK = pointer.P(true)
 			Expect(controller.cidsMap.Allocate(vmi)).To(Succeed())
 			vmi.Status.Phase = virtv1.Succeeded
 			addVirtualMachine(vmi)

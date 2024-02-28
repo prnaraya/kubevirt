@@ -32,7 +32,6 @@ import (
 	. "github.com/onsi/gomega"
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
 
 	"kubevirt.io/kubevirt/tests/exec"
 	"kubevirt.io/kubevirt/tests/testsuite"
@@ -42,6 +41,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests"
 	"kubevirt.io/kubevirt/tests/console"
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
@@ -64,7 +64,7 @@ var _ = SIGDescribe("Slirp Networking", decorators.Networking, func() {
 			currentConfiguration.NetworkConfiguration = &v1.NetworkConfiguration{}
 		}
 
-		currentConfiguration.NetworkConfiguration.PermitSlirpInterface = pointer.BoolPtr(enable)
+		currentConfiguration.NetworkConfiguration.PermitSlirpInterface = pointer.P(enable)
 		kv := tests.UpdateKubeVirtConfigValueAndWait(currentConfiguration)
 		currentConfiguration = kv.Spec.Configuration
 	}

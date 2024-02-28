@@ -29,8 +29,6 @@ import (
 	"strings"
 	"time"
 
-	"kubevirt.io/kubevirt/pkg/pointer"
-
 	"kubevirt.io/kubevirt/tests/decorators"
 
 	expect "github.com/google/goexpect"
@@ -51,6 +49,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	cloudinit "kubevirt.io/kubevirt/pkg/cloud-init"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/util/net/dns"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	"kubevirt.io/kubevirt/tests"

@@ -24,8 +24,6 @@ import (
 	"fmt"
 	"time"
 
-	"kubevirt.io/kubevirt/pkg/pointer"
-
 	"kubevirt.io/kubevirt/tests/decorators"
 	"kubevirt.io/kubevirt/tests/libdv"
 
@@ -53,6 +51,7 @@ import (
 	poolv1 "kubevirt.io/api/pool/v1alpha1"
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests"
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 )

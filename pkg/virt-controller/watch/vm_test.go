@@ -27,7 +27,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	framework "k8s.io/client-go/tools/cache/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
 
 	v1 "kubevirt.io/api/core/v1"
 	virtv1 "kubevirt.io/api/core/v1"
@@ -46,7 +45,7 @@ import (
 
 	virtcontroller "kubevirt.io/kubevirt/pkg/controller"
 	"kubevirt.io/kubevirt/pkg/instancetype"
-	kvpointer "kubevirt.io/kubevirt/pkg/pointer"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	watchutil "kubevirt.io/kubevirt/pkg/virt-controller/watch/util"
@@ -2125,7 +2124,7 @@ var _ = Describe("VirtualMachine", func() {
 		It("should delete VirtualMachineInstance when VirtualMachine marked for deletion", func() {
 			vm, vmi := DefaultVirtualMachine(true)
 			vm.DeletionTimestamp = now()
-			vm.DeletionGracePeriodSeconds = kvpointer.P(v1.DefaultGracePeriodSeconds)
+			vm.DeletionGracePeriodSeconds = pointer.P(v1.DefaultGracePeriodSeconds)
 
 			addVirtualMachine(vm)
 			vmiFeeder.Add(vmi)
@@ -3391,7 +3390,7 @@ var _ = Describe("VirtualMachine", func() {
 					vm, vmi := DefaultVirtualMachine(true)
 
 					vm.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-					vm.DeletionGracePeriodSeconds = kvpointer.P(v1.DefaultGracePeriodSeconds)
+					vm.DeletionGracePeriodSeconds = pointer.P(v1.DefaultGracePeriodSeconds)
 					vmi.Status.Phase = phase
 
 					if condType != "" {
@@ -4131,7 +4130,7 @@ var _ = Describe("VirtualMachine", func() {
 				BeforeEach(func() {
 					preferenceSpec := instancetypev1beta1.VirtualMachinePreferenceSpec{
 						Firmware: &instancetypev1beta1.FirmwarePreferences{
-							PreferredUseEfi: pointer.Bool(true),
+							PreferredUseEfi: pointer.P(true),
 						},
 						Devices: &instancetypev1beta1.DevicePreferences{
 							PreferredDiskBus:        virtv1.DiskBusVirtio,
@@ -4253,7 +4252,7 @@ var _ = Describe("VirtualMachine", func() {
 					Entry("using v1alpha1 and VirtualMachinePreferenceSpecRevision with APIVersion", func() []byte {
 						v1alpha1preferenceSpec := instancetypev1alpha1.VirtualMachinePreferenceSpec{
 							Firmware: &instancetypev1alpha1.FirmwarePreferences{
-								PreferredUseEfi: pointer.Bool(true),
+								PreferredUseEfi: pointer.P(true),
 							},
 							Devices: &instancetypev1alpha1.DevicePreferences{
 								PreferredDiskBus:        virtv1.DiskBusVirtio,
@@ -4278,7 +4277,7 @@ var _ = Describe("VirtualMachine", func() {
 					Entry("using v1alpha1 and VirtualMachinePreferenceSpecRevision without APIVersion", func() []byte {
 						v1alpha1preferenceSpec := instancetypev1alpha1.VirtualMachinePreferenceSpec{
 							Firmware: &instancetypev1alpha1.FirmwarePreferences{
-								PreferredUseEfi: pointer.Bool(true),
+								PreferredUseEfi: pointer.P(true),
 							},
 							Devices: &instancetypev1alpha1.DevicePreferences{
 								PreferredDiskBus:        virtv1.DiskBusVirtio,
@@ -4311,7 +4310,7 @@ var _ = Describe("VirtualMachine", func() {
 							},
 							Spec: instancetypev1alpha1.VirtualMachinePreferenceSpec{
 								Firmware: &instancetypev1alpha1.FirmwarePreferences{
-									PreferredUseEfi: pointer.Bool(true),
+									PreferredUseEfi: pointer.P(true),
 								},
 								Devices: &instancetypev1alpha1.DevicePreferences{
 									PreferredDiskBus:        virtv1.DiskBusVirtio,
@@ -4337,7 +4336,7 @@ var _ = Describe("VirtualMachine", func() {
 							},
 							Spec: instancetypev1alpha2.VirtualMachinePreferenceSpec{
 								Firmware: &instancetypev1alpha2.FirmwarePreferences{
-									PreferredUseEfi: pointer.Bool(true),
+									PreferredUseEfi: pointer.P(true),
 								},
 								Devices: &instancetypev1alpha2.DevicePreferences{
 									PreferredDiskBus:        virtv1.DiskBusVirtio,
@@ -4575,7 +4574,7 @@ var _ = Describe("VirtualMachine", func() {
 				It("should reject if an existing ControllerRevision is found with unexpected VirtualMachinePreferenceSpec data", func() {
 					unexpectedPreference := preference.DeepCopy()
 					unexpectedPreference.Spec.Firmware = &instancetypev1beta1.FirmwarePreferences{
-						PreferredUseBios: pointer.Bool(true),
+						PreferredUseBios: pointer.P(true),
 					}
 
 					preferenceRevision, err := instancetype.CreateControllerRevision(vm, unexpectedPreference)
@@ -4648,7 +4647,7 @@ var _ = Describe("VirtualMachine", func() {
 						},
 						Spec: instancetypev1beta1.VirtualMachinePreferenceSpec{
 							Devices: &instancetypev1beta1.DevicePreferences{
-								PreferredAutoattachPodInterface: pointer.Bool(false),
+								PreferredAutoattachPodInterface: pointer.P(false),
 							},
 						},
 					}
@@ -4747,7 +4746,7 @@ var _ = Describe("VirtualMachine", func() {
 						Kind: instancetypeapi.SingularPreferenceResourceName,
 					}
 
-					vm.Spec.Template.Spec.Domain.Devices.AutoattachInputDevice = pointer.Bool(true)
+					vm.Spec.Template.Spec.Domain.Devices.AutoattachInputDevice = pointer.P(true)
 
 					expectedPreferenceRevision, err := instancetype.CreateControllerRevision(vm, preference)
 					Expect(err).ToNot(HaveOccurred())
@@ -4783,7 +4782,7 @@ var _ = Describe("VirtualMachine", func() {
 						},
 						Spec: instancetypev1beta1.VirtualMachinePreferenceSpec{
 							Devices: &instancetypev1beta1.DevicePreferences{
-								PreferredAutoattachInputDevice: pointer.Bool(true),
+								PreferredAutoattachInputDevice: pointer.P(true),
 								PreferredInputBus:              virtv1.InputBusVirtio,
 								PreferredInputType:             virtv1.InputTypeTablet,
 							},
@@ -4831,7 +4830,7 @@ var _ = Describe("VirtualMachine", func() {
 						},
 						Spec: instancetypev1beta1.VirtualMachinePreferenceSpec{
 							Devices: &instancetypev1beta1.DevicePreferences{
-								PreferredAutoattachInputDevice: pointer.Bool(false),
+								PreferredAutoattachInputDevice: pointer.P(false),
 							},
 						},
 					}
@@ -4996,10 +4995,10 @@ var _ = Describe("VirtualMachine", func() {
 			sanityExecute(vm)
 
 		},
-			Entry("add default input device when enabled in VirtualMachine", pointer.Bool(true), []v1.Input{}, &v1.Input{Name: "default-0"}),
-			Entry("not add default input device when disabled by VirtualMachine", pointer.Bool(false), []v1.Input{}, nil),
+			Entry("add default input device when enabled in VirtualMachine", pointer.P(true), []v1.Input{}, &v1.Input{Name: "default-0"}),
+			Entry("not add default input device when disabled by VirtualMachine", pointer.P(false), []v1.Input{}, nil),
 			Entry("not add default input device by default", nil, []v1.Input{}, nil),
-			Entry("not add default input device when devices already present in VirtualMachine", pointer.Bool(true), []v1.Input{{Name: "existing-0"}}, &v1.Input{Name: "existing-0"}),
+			Entry("not add default input device when devices already present in VirtualMachine", pointer.P(true), []v1.Input{{Name: "existing-0"}}, &v1.Input{Name: "existing-0"}),
 		)
 
 		Context("Live update features", func() {
@@ -5024,7 +5023,7 @@ var _ = Describe("VirtualMachine", func() {
 						Spec: v1.KubeVirtSpec{
 							Configuration: v1.KubeVirtConfiguration{
 								LiveUpdateConfiguration: &virtv1.LiveUpdateConfiguration{
-									MaxCpuSockets: kvpointer.P(maxSocketsFromConfig),
+									MaxCpuSockets: pointer.P(maxSocketsFromConfig),
 								},
 								VMRolloutStrategy: &liveUpdate,
 								DeveloperConfiguration: &v1.DeveloperConfiguration{
@@ -5044,7 +5043,7 @@ var _ = Describe("VirtualMachine", func() {
 						Spec: v1.KubeVirtSpec{
 							Configuration: v1.KubeVirtConfiguration{
 								LiveUpdateConfiguration: &virtv1.LiveUpdateConfiguration{
-									MaxCpuSockets: kvpointer.P(maxSocketsFromConfig),
+									MaxCpuSockets: pointer.P(maxSocketsFromConfig),
 								},
 								VMRolloutStrategy: &liveUpdate,
 								DeveloperConfiguration: &v1.DeveloperConfiguration{
@@ -5556,7 +5555,7 @@ var _ = Describe("VirtualMachine", func() {
 				var maxSockets uint32 = 8
 
 				By("Setting a cluster-wide CPU maxSockets value")
-				kv.Spec.Configuration.LiveUpdateConfiguration.MaxCpuSockets = kvpointer.P(maxSockets)
+				kv.Spec.Configuration.LiveUpdateConfiguration.MaxCpuSockets = pointer.P(maxSockets)
 				testutils.UpdateFakeKubeVirtClusterConfig(kvInformer, kv)
 
 				By("Creating a VM with CPU sockets set to the cluster maxiumum")

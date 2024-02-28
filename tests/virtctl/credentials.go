@@ -12,10 +12,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests/clientcmd"
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
 	"kubevirt.io/kubevirt/tests/libvmi"
@@ -97,7 +97,7 @@ var _ = Describe("[sig-compute][virtctl]credentials", func() {
 					Kind:       kubevirtv1.VirtualMachineGroupVersionKind.Kind,
 					Name:       vm.Name,
 					UID:        vm.UID,
-					Controller: pointer.Bool(true),
+					Controller: pointer.P(true),
 				}},
 			},
 			Data: map[string][]byte{
@@ -123,7 +123,7 @@ var _ = Describe("[sig-compute][virtctl]credentials", func() {
 					Kind:       kubevirtv1.VirtualMachineGroupVersionKind.Kind,
 					Name:       vm.Name,
 					UID:        vm.UID,
-					Controller: pointer.Bool(true),
+					Controller: pointer.P(true),
 				}},
 			},
 			Data: map[string][]byte{

@@ -21,7 +21,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	framework "k8s.io/client-go/tools/cache/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	v1 "kubevirt.io/api/core/v1"
@@ -35,6 +34,7 @@ import (
 
 	virtcontroller "kubevirt.io/kubevirt/pkg/controller"
 	"kubevirt.io/kubevirt/pkg/instancetype"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	"kubevirt.io/kubevirt/pkg/util/status"
 )
@@ -834,7 +834,7 @@ var _ = Describe("Restore controller", func() {
 					}
 
 					Expect(vmRestore.Status.Restores).To(HaveLen(1))
-					vmRestore.Status.Restores[0].DataVolumeName = pointer.String(restoreDVName(vmRestore, vmRestore.Status.Restores[0].VolumeName))
+					vmRestore.Status.Restores[0].DataVolumeName = pointer.P(restoreDVName(vmRestore, vmRestore.Status.Restores[0].VolumeName))
 					expectPVCUpdates(k8sClient, vmRestore)
 
 					By("Making sure right VM update occurs")
@@ -886,8 +886,8 @@ var _ = Describe("Restore controller", func() {
 							Kind:               "VirtualMachine",
 							Name:               newVM.Name,
 							UID:                newVM.UID,
-							Controller:         pointer.BoolPtr(true),
-							BlockOwnerDeletion: pointer.BoolPtr(true),
+							Controller:         pointer.P(true),
+							BlockOwnerDeletion: pointer.P(true),
 						},
 					}
 

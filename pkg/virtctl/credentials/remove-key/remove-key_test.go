@@ -20,12 +20,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
-	"k8s.io/utils/pointer"
 	"kubevirt.io/api/core"
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/api"
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests/clientcmd"
 )
 
@@ -91,7 +91,7 @@ var _ = Describe("Credentials", func() {
 					Kind:       v1.VirtualMachineGroupVersionKind.Kind,
 					Name:       vm.Name,
 					UID:        vm.UID,
-					Controller: pointer.Bool(true),
+					Controller: pointer.P(true),
 				}},
 			},
 			Data: map[string][]byte{
@@ -261,7 +261,7 @@ var _ = Describe("Credentials", func() {
 					Kind:       v1.VirtualMachineGroupVersionKind.Kind,
 					Name:       vm.Name,
 					UID:        vm.UID,
-					Controller: pointer.Bool(true),
+					Controller: pointer.P(true),
 				}},
 			},
 			Data: map[string][]byte{

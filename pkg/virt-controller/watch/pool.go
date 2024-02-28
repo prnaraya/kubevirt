@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/trace"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,6 +34,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/controller"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	traceUtils "kubevirt.io/kubevirt/pkg/util/trace"
 )
 
@@ -598,7 +598,7 @@ func calculateNewVMNames(count int, baseName string, namespace string, vmStore c
 }
 
 func poolOwnerRef(pool *poolv1.VirtualMachinePool) metav1.OwnerReference {
-	t := pointer.BoolPtr(true)
+	t := pointer.P(true)
 	gvk := schema.GroupVersionKind{Group: poolv1.SchemeGroupVersion.Group, Version: poolv1.SchemeGroupVersion.Version, Kind: poolv1.VirtualMachinePoolKind}
 	return metav1.OwnerReference{
 		APIVersion:         gvk.GroupVersion().String(),

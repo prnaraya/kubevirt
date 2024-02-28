@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"time"
 
-	kvpointer "kubevirt.io/kubevirt/pkg/pointer"
+	"kubevirt.io/kubevirt/pkg/pointer"
 
 	"kubevirt.io/kubevirt/tests/testsuite"
 
@@ -390,7 +390,7 @@ var _ = SIGMigrationDescribe("Live Migration", func() {
 					vmi_evict1 := alpineVMIWithEvictionStrategy()
 					vmi_evict2 := alpineVMIWithEvictionStrategy()
 					vmi_noevict := tests.NewRandomVMIWithEphemeralDisk(cd.ContainerDiskFor(cd.ContainerDiskAlpine))
-					vmi_noevict.Spec.EvictionStrategy = kvpointer.P(v1.EvictionStrategyNone)
+					vmi_noevict.Spec.EvictionStrategy = pointer.P(v1.EvictionStrategyNone)
 
 					labelKey := "testkey"
 					labels := map[string]string{

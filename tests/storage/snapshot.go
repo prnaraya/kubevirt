@@ -21,7 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/pointer"
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
 
@@ -37,6 +36,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests"
 	"kubevirt.io/kubevirt/tests/console"
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
@@ -1386,8 +1386,8 @@ var _ = SIGDescribe("VirtualMachineSnapshot Tests", func() {
 					Expect(found).To(BeTrue())
 				}
 			},
-				Entry("[test_id:4611] without DV garbage collection", pointer.Int32(-1)),
-				Entry("[test_id:8668] with DV garbage collection", pointer.Int32(0)),
+				Entry("[test_id:4611] without DV garbage collection", pointer.P(int32(-1))),
+				Entry("[test_id:8668] with DV garbage collection", pointer.P(int32(0))),
 			)
 		})
 

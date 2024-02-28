@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/pointer"
 
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
 	"kubevirt.io/kubevirt/tests/framework/matcher"
@@ -41,6 +40,7 @@ import (
 	instancetypev1beta1 "kubevirt.io/api/instancetype/v1beta1"
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests"
 	"kubevirt.io/kubevirt/tests/libnet"
 	"kubevirt.io/kubevirt/tests/libvmi"
@@ -580,7 +580,7 @@ var _ = Describe("[sig-compute]Subresource Api", decorators.SigCompute, func() {
 			BeforeEach(func() {
 				preference = newVirtualMachinePreference()
 				preference.Spec.Devices = &instancetypev1beta1.DevicePreferences{
-					PreferredAutoattachGraphicsDevice: pointer.Bool(true),
+					PreferredAutoattachGraphicsDevice: pointer.P(true),
 				}
 				preference, err = virtCli.VirtualMachinePreference(testsuite.GetTestNamespace(preference)).
 					Create(context.Background(), preference, metav1.CreateOptions{})
@@ -592,7 +592,7 @@ var _ = Describe("[sig-compute]Subresource Api", decorators.SigCompute, func() {
 
 				clusterPreference = newVirtualMachineClusterPreference()
 				clusterPreference.Spec.Devices = &instancetypev1beta1.DevicePreferences{
-					PreferredAutoattachGraphicsDevice: pointer.Bool(true),
+					PreferredAutoattachGraphicsDevice: pointer.P(true),
 				}
 				clusterPreference, err = virtCli.VirtualMachineClusterPreference().
 					Create(context.Background(), clusterPreference, metav1.CreateOptions{})

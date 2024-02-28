@@ -37,7 +37,6 @@ import (
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
 
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
@@ -57,6 +56,7 @@ import (
 	ephemeraldiskutils "kubevirt.io/kubevirt/pkg/ephemeral-disk-utils"
 	"kubevirt.io/kubevirt/pkg/ephemeral-disk/fake"
 	cmdv1 "kubevirt.io/kubevirt/pkg/handler-launcher-com/cmd/v1"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/util/net/ip"
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/metadata"
@@ -1420,7 +1420,7 @@ var _ = Describe("Manager", func() {
 			manager.MarkGracefulShutdownVMI()
 
 			gracePeriod, _ := metadataCache.GracePeriod.Load()
-			Expect(gracePeriod.MarkedForGracefulShutdown).To(Equal(pointer.Bool(true)))
+			Expect(gracePeriod.MarkedForGracefulShutdown).To(Equal(pointer.P(true)))
 		})
 
 		It("Should signal graceful shutdown after marked for shutdown", func() {

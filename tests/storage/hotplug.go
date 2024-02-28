@@ -31,7 +31,6 @@ import (
 	"kubevirt.io/kubevirt/tests/libmigration"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
 
 	"kubevirt.io/kubevirt/tests/decorators"
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
@@ -52,6 +51,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	virtctl "kubevirt.io/kubevirt/pkg/virtctl/vm"
 	"kubevirt.io/kubevirt/tests"
 	"kubevirt.io/kubevirt/tests/clientcmd"
@@ -1380,7 +1380,7 @@ var _ = SIGDescribe("Hotplug", func() {
 			Expect(podName).ToNot(BeEmpty())
 			foreGround := metav1.DeletePropagationForeground
 			err := virtClient.CoreV1().Pods(vmi.Namespace).Delete(context.Background(), podName, metav1.DeleteOptions{
-				GracePeriodSeconds: pointer.Int64(0),
+				GracePeriodSeconds: pointer.P(int64(0)),
 				PropagationPolicy:  &foreGround,
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -1481,7 +1481,7 @@ var _ = SIGDescribe("Hotplug", func() {
 			vm.Spec.Template.Spec.Domain.Resources.Limits = corev1.ResourceList{}
 			vm.Spec.Template.Spec.Domain.Resources.Limits[corev1.ResourceMemory] = *memLimitQuantity
 			vm.Spec.Template.Spec.Domain.Resources.Limits[corev1.ResourceCPU] = *cpuLimitQuantity
-			vm.Spec.Running = pointer.Bool(true)
+			vm.Spec.Running = pointer.P(true)
 			vm, err := virtClient.VirtualMachine(testsuite.GetTestNamespace(vm)).Create(context.Background(), vm)
 			Expect(err).ToNot(HaveOccurred())
 			Eventually(func() bool {

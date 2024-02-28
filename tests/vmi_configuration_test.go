@@ -30,8 +30,6 @@ import (
 	"time"
 	"unicode"
 
-	"kubevirt.io/kubevirt/pkg/pointer"
-
 	"kubevirt.io/kubevirt/tests/decorators"
 
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -66,6 +64,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	kubevirt_hooks_v1alpha2 "kubevirt.io/kubevirt/pkg/hooks/v1alpha2"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	"kubevirt.io/kubevirt/pkg/util/cluster"
 	hw_utils "kubevirt.io/kubevirt/pkg/util/hardware"

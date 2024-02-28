@@ -41,8 +41,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/utils/pointer"
-
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/generic"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/gpu"
 
@@ -76,6 +74,7 @@ import (
 	netsetup "kubevirt.io/kubevirt/pkg/network/setup"
 	netsriov "kubevirt.io/kubevirt/pkg/network/sriov"
 	netvmispec "kubevirt.io/kubevirt/pkg/network/vmispec"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	kutil "kubevirt.io/kubevirt/pkg/util"
 	hw_utils "kubevirt.io/kubevirt/pkg/util/hardware"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/metadata"
@@ -1675,7 +1674,7 @@ func (l *LibvirtDomainManager) SoftRebootVMI(vmi *v1.VirtualMachineInstance) err
 
 func (l *LibvirtDomainManager) MarkGracefulShutdownVMI() {
 	l.metadataCache.GracePeriod.WithSafeBlock(func(gracePeriodMetadata *api.GracePeriodMetadata, _ bool) {
-		gracePeriodMetadata.MarkedForGracefulShutdown = pointer.Bool(true)
+		gracePeriodMetadata.MarkedForGracefulShutdown = pointer.P(true)
 	})
 	log.Log.V(4).Infof("Marked for graceful shutdown in metadata: %s", l.metadataCache.GracePeriod.String())
 }

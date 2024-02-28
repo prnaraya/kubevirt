@@ -32,8 +32,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/utils/pointer"
-
 	"kubevirt.io/kubevirt/pkg/safepath"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
 
@@ -75,6 +73,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	diskutils "kubevirt.io/kubevirt/pkg/ephemeral-disk-utils"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	virtcache "kubevirt.io/kubevirt/pkg/virt-handler/cache"
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
@@ -1281,8 +1280,8 @@ var _ = Describe("VirtualMachineInstance", func() {
 						vmi.Spec.Volumes[0].Name: uint32(1234),
 					},
 					KernelBootChecksum: container_disk.KernelBootChecksum{
-						Kernel: pointer.Uint32(33),
-						Initrd: pointer.Uint32(35),
+						Kernel: pointer.P(uint32(33)),
+						Initrd: pointer.P(uint32(35)),
 					},
 				}
 
@@ -2892,14 +2891,14 @@ var _ = Describe("VirtualMachineInstance", func() {
 				}
 			},
 				Entry("CDROM", getCDRomDisk(nil), getContainerDiskVolume(), v1.LiveMigration),
-				Entry("CDROM with read-only=true", getCDRomDisk(pointer.BoolPtr(true)), getContainerDiskVolume(), v1.LiveMigration),
-				Entry("CDROM with read-only=false", getCDRomDisk(pointer.BoolPtr(false)), getContainerDiskVolume(), v1.BlockMigration),
+				Entry("CDROM with read-only=true", getCDRomDisk(pointer.P(true)), getContainerDiskVolume(), v1.LiveMigration),
+				Entry("CDROM with read-only=false", getCDRomDisk(pointer.P(false)), getContainerDiskVolume(), v1.BlockMigration),
 			)
 		})
 
 		It("HyperV reenlightenment shouldn't be migratable when tsc frequency is missing", func() {
 			vmi := api2.NewMinimalVMI("testvmi")
-			vmi.Spec.Domain.Features = &v1.Features{Hyperv: &v1.FeatureHyperv{Reenlightenment: &v1.FeatureState{Enabled: pointer.Bool(true)}}}
+			vmi.Spec.Domain.Features = &v1.Features{Hyperv: &v1.FeatureHyperv{Reenlightenment: &v1.FeatureState{Enabled: pointer.P(true)}}}
 			vmi.Status.TopologyHints = nil
 
 			cond, _ := controller.calculateLiveMigrationCondition(vmi)

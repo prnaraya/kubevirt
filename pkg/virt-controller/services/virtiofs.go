@@ -5,11 +5,10 @@ import (
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
 	v1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/pkg/config"
-
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/util"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virtiofs"
@@ -126,8 +125,8 @@ func securityContextVirtioFS(profile securityProfile) *k8sv1.SecurityContext {
 	return &k8sv1.SecurityContext{
 		RunAsUser:                credential,
 		RunAsGroup:               credential,
-		RunAsNonRoot:             pointer.Bool(isRestricted(profile)),
-		AllowPrivilegeEscalation: pointer.Bool(isPrivileged(profile)),
+		RunAsNonRoot:             pointer.P(isRestricted(profile)),
+		AllowPrivilegeEscalation: pointer.P(isPrivileged(profile)),
 		Capabilities:             virtiofsCapabilities(profile),
 	}
 }

@@ -27,8 +27,6 @@ import (
 	"strings"
 	"time"
 
-	"kubevirt.io/kubevirt/pkg/pointer"
-
 	"kubevirt.io/kubevirt/tests/libmigration"
 
 	"kubevirt.io/kubevirt/tests/decorators"
@@ -59,6 +57,7 @@ import (
 
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests/util"
 )
 

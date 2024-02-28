@@ -32,8 +32,6 @@ import (
 	kfs "kubevirt.io/kubevirt/pkg/os/fs"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 
-	"kubevirt.io/kubevirt/pkg/pointer"
-
 	v1 "kubevirt.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -44,6 +42,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/driver/procsys"
 	neterrors "kubevirt.io/kubevirt/pkg/network/errors"
 	"kubevirt.io/kubevirt/pkg/network/setup/netpod"
+	"kubevirt.io/kubevirt/pkg/pointer"
 )
 
 const (

@@ -24,19 +24,18 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"kubevirt.io/kubevirt/pkg/virt-config/deprecation"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/pointer"
 
 	v1 "kubevirt.io/api/core/v1"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
+	"kubevirt.io/kubevirt/pkg/virt-config/deprecation"
 )
 
 var _ = Describe("Validating KubeVirtUpdate Admitter", func() {
@@ -62,7 +61,7 @@ var _ = Describe("Validating KubeVirtUpdate Admitter", func() {
 			VirtualMachineInstanceProfile: &v1.VirtualMachineInstanceProfile{
 				CustomProfile: &v1.CustomProfile{
 					RuntimeDefaultProfile: true,
-					LocalhostProfile:      pointer.String("somethingNotImportant"),
+					LocalhostProfile:      pointer.P("somethingNotImportant"),
 				},
 			},
 		}, []string{vmProfileField.Child("customProfile", "runtimeDefaultProfile").String(), vmProfileField.Child("customProfile", "localhostProfile").String()}),

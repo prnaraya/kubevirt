@@ -4,10 +4,10 @@ import (
 	"strconv"
 
 	k8sv1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
 
 	v1 "kubevirt.io/api/core/v1"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/util"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 )
@@ -192,7 +192,7 @@ func securityContext(userId int64, privileged bool, requiredCapabilities *k8sv1.
 
 	if isNonRoot {
 		context.RunAsGroup = &userId
-		context.AllowPrivilegeEscalation = pointer.Bool(false)
+		context.AllowPrivilegeEscalation = pointer.P(false)
 	}
 
 	return context

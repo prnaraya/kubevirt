@@ -6,7 +6,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/utils/pointer"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +19,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests/clientcmd"
 )
 
@@ -68,7 +68,7 @@ var _ = Describe("Credentials set-password", func() {
 					Kind:       v1.VirtualMachineGroupVersionKind.Kind,
 					Name:       vm.Name,
 					UID:        vm.UID,
-					Controller: pointer.Bool(true),
+					Controller: pointer.P(true),
 				}},
 			},
 		}
@@ -178,7 +178,7 @@ var _ = Describe("Credentials set-password", func() {
 					Kind:       v1.VirtualMachineGroupVersionKind.Kind,
 					Name:       vm.Name,
 					UID:        vm.UID,
-					Controller: pointer.Bool(true),
+					Controller: pointer.P(true),
 				}},
 			},
 		}

@@ -8,8 +8,6 @@ import (
 
 	"kubevirt.io/kubevirt/tests/libnet"
 
-	"kubevirt.io/kubevirt/pkg/pointer"
-
 	v1 "kubevirt.io/api/core/v1"
 
 	util2 "kubevirt.io/kubevirt/tests/util"
@@ -27,6 +25,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/tests/decorators"
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
 	. "kubevirt.io/kubevirt/tests/framework/matcher"

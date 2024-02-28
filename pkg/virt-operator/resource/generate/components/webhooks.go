@@ -7,8 +7,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-
 	"kubevirt.io/api/clone"
 	clonev1alpha1 "kubevirt.io/api/clone/v1alpha1"
 
@@ -26,6 +24,8 @@ import (
 	instancetypev1beta1 "kubevirt.io/api/instancetype/v1beta1"
 	poolv1 "kubevirt.io/api/pool/v1alpha1"
 	snapshotv1 "kubevirt.io/api/snapshot/v1alpha1"
+
+	"kubevirt.io/kubevirt/pkg/pointer"
 )
 
 var sideEffectNone = admissionregistrationv1.SideEffectClassNone
@@ -157,7 +157,7 @@ func NewOpertorValidatingWebhookConfiguration(operatorNamespace string) *admissi
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: operatorNamespace,
 						Name:      VirtOperatorServiceName,
-						Path:      pointer.String(KubeVirtCreateValidatePath),
+						Path:      pointer.P(KubeVirtCreateValidatePath),
 					},
 				},
 			},
@@ -281,7 +281,7 @@ func NewVirtAPIMutatingWebhookConfiguration(installNamespace string) *admissionr
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: installNamespace,
 						Name:      VirtApiServiceName,
-						Path:      pointer.String(VMCloneCreateMutatePath),
+						Path:      pointer.P(VMCloneCreateMutatePath),
 					},
 				},
 			},

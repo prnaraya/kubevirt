@@ -31,7 +31,6 @@ import (
 	nlfake "kubevirt.io/kubevirt/pkg/network/driver/netlink/fake"
 	"kubevirt.io/kubevirt/pkg/network/driver/nmstate"
 	psfake "kubevirt.io/kubevirt/pkg/network/driver/procsys/fake"
-
 	"kubevirt.io/kubevirt/pkg/pointer"
 )
 

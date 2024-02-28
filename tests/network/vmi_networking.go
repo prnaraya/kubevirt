@@ -47,7 +47,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	netutils "k8s.io/utils/net"
-	"k8s.io/utils/pointer"
 
 	kvutil "kubevirt.io/kubevirt/pkg/util"
 	"kubevirt.io/kubevirt/tests/util"
@@ -57,6 +56,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/network/netbinding"
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	"kubevirt.io/kubevirt/tests"
@@ -124,7 +124,7 @@ var _ = SIGDescribe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:c
 			currentConfiguration.NetworkConfiguration = &v1.NetworkConfiguration{}
 		}
 
-		currentConfiguration.NetworkConfiguration.PermitBridgeInterfaceOnPodNetwork = pointer.BoolPtr(enable)
+		currentConfiguration.NetworkConfiguration.PermitBridgeInterfaceOnPodNetwork = pointer.P(enable)
 		kv := tests.UpdateKubeVirtConfigValueAndWait(currentConfiguration)
 		currentConfiguration = kv.Spec.Configuration
 	}

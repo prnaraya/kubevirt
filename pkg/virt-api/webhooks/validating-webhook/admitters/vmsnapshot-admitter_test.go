@@ -23,8 +23,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"k8s.io/utils/pointer"
-
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,6 +38,7 @@ import (
 	snapshotv1 "kubevirt.io/api/snapshot/v1alpha1"
 	"kubevirt.io/client-go/kubecli"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	"kubevirt.io/kubevirt/pkg/virt-api/webhooks"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
@@ -274,7 +273,7 @@ var _ = Describe("Validating VirtualMachineSnapshot Admitter", func() {
 						Domain: v1.DomainSpec{
 							Devices: v1.Devices{
 								TPM: &v1.TPMDevice{
-									Persistent: pointer.BoolPtr(true),
+									Persistent: pointer.P(true),
 								},
 							},
 						},
